@@ -259,28 +259,6 @@ export default function Dashboard({ onToggleSidebar }) {
       <PageHeader
         title="Live Key Metrics"
         onToggleSidebar={onToggleSidebar}
-        right={
-          <>
-            <button
-              id="btn-copy"
-              className="btn btn-secondary"
-              onClick={() => openExportModal('copy')}
-              title="Copy charts and map as images — paste into Canva"
-              style={{ height: 42 }}
-            >
-              <i className="fa-regular fa-copy" /> Copy
-            </button>
-            <button
-              id="btn-download"
-              className="btn btn-primary"
-              onClick={() => openExportModal('download')}
-              title="Download a PNG of the dashboard sections"
-              style={{ height: 42 }}
-            >
-              <i className="fa-solid fa-download" /> Download
-            </button>
-          </>
-        }
       />
 
       <div className="filter-bar" data-section="filters">
@@ -407,18 +385,6 @@ export default function Dashboard({ onToggleSidebar }) {
 
       <hr />
 
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        onDownload={handleDownload}
-        onCopy={handleCopy}
-        sections={EXPORT_SECTIONS}
-        selected={exportSectionsSelected}
-        onToggle={toggleExportSection}
-        mode={exportMode}
-        exporting={exporting}
-        message={exportMessage}
-      />
     </div>
   );
 }

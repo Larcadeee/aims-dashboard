@@ -87,13 +87,19 @@ function collectCss(rootNode) {
   ];
   const sheets = [...document.styleSheets];
   for (const sheet of sheets) {
+    const sheetUrl = sheet.href || '';
+    const isExternal = sheetUrl && new URL(sheetUrl, document.baseURI).origin !== window.location.origin;
+    if (isExternal) continue;
+
     let rules;
     try { rules = sheet.cssRules; } catch (e) { continue; }
     if (!rules) continue;
     for (const rule of rules) {
       if (!rule.selectorText) continue;
+      const cssText = rule.cssText || '';
+      if (cssText.includes('url(') || cssText.includes('@font-face')) continue;
       if (targetSelectors.some((s) => rule.selectorText.includes(s))) {
-        needed.add(rule.cssText);
+        needed.add(cssText);
       }
     }
   }
