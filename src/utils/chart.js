@@ -59,12 +59,13 @@ export function renderTrendChart(elementId, data) {
     mode: 'lines',
     type: 'scatter',
     fill: 'tozeroy',
-    fillcolor: 'rgba(79, 70, 229, 0.15)',
-    line: { shape: 'spline', smoothing: 1.2, color: '#4f46e5', width: 3 },
+    fillcolor: 'rgba(37, 99, 235, 0.12)',
+    line: { shape: 'spline', smoothing: 1.2, color: '#2563eb', width: 3 },
     name: 'Turn Around',
     hovertemplate:
       '<b>%{y:.1f} mins</b><br>%{x|%b %d, %I:%M %p}<extra></extra>',
   };
+
   const layout = {
     margin: { t: 20, r: 20, l: 50, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -86,7 +87,7 @@ export function renderTrendChart(elementId, data) {
   });
 }
 
-// --- Barangay heat map ---------------------------------------------------
+// --- Barangay heat map (No API Key Required) -----------------------------
 
 export function renderMap(elementId, data, geoJson) {
   const el = document.getElementById(elementId);
@@ -121,11 +122,17 @@ export function renderMap(elementId, data, geoJson) {
     featureidkey: 'properties.BRANGAY',
     colorscale: 'Reds',
     hoverinfo: 'location+z',
-    marker: { opacity: 0.75 },
+    marker: {
+      opacity: 0.75,
+      line: { width: 0.8, color: '#cbd5e1' },
+    },
   };
-  const layout = {
+
+  // Uses 'white-bg' with free CARTO Positron raster tiles so Plotly
+  // never requests a Mapbox access token.
+ const layout = {
     mapbox: {
-      style: 'carto-positron',
+      style: 'open-street-map', // Free built-in light map, NO API key or watermark
       center: { lat: 8.94, lon: 125.54 },
       zoom: 12.5,
     },
@@ -134,7 +141,10 @@ export function renderMap(elementId, data, geoJson) {
     plot_bgcolor: 'rgba(0,0,0,0)',
   };
 
-  window.Plotly.newPlot(elementId, [trace], layout, { responsive: true });
+  window.Plotly.newPlot(elementId, [trace], layout, {
+    responsive: true,
+    displayModeBar: false,
+  });
 }
 
 // --- Donut charts (radius + incident type) ------------------------------
@@ -179,11 +189,12 @@ export function renderRadiusChart(elementId, data) {
       labels: keys,
       type: 'pie',
       hole: 0.6,
-      marker: { colors: ['#4f46e5', '#94a3b8'] },
+      marker: { colors: ['#2563eb', '#94a3b8'] },
       textinfo: 'none',
       hoverinfo: 'label+value+percent',
     },
   ];
+
   const layout = {
     margin: { t: 10, b: 10, l: 0, r: 0 },
     showlegend: true,
@@ -198,7 +209,14 @@ export function renderRadiusChart(elementId, data) {
   });
 }
 
-const TYPE_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#64748b'];
+const TYPE_COLORS = [
+  '#ef4444',
+  '#f59e0b',
+  '#10b981',
+  '#3b82f6',
+  '#8b5cf6',
+  '#64748b',
+];
 
 export function renderTypeChart(elementId, data) {
   const el = document.getElementById(elementId);
@@ -212,7 +230,9 @@ export function renderTypeChart(elementId, data) {
     return;
   }
 
-  const shortLabels = keys.map((l) => (l.length > 22 ? `${l.substring(0, 22)}...` : l));
+  const shortLabels = keys.map((l) =>
+    l.length > 22 ? `${l.substring(0, 22)}...` : l
+  );
 
   const trace = [
     {
@@ -226,6 +246,7 @@ export function renderTypeChart(elementId, data) {
       hoverinfo: 'text+percent',
     },
   ];
+
   const layout = {
     margin: { t: 10, b: 10, l: 0, r: 0 },
     showlegend: true,

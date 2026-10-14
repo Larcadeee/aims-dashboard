@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 import Sidebar from './components/Sidebar.jsx';
 import ZapierChat from './components/ZapierChat.jsx';
@@ -9,46 +9,79 @@ import Report from './pages/Report.jsx';
 import Weather from './pages/Weather.jsx';
 import News from './pages/News.jsx';
 
-// App shell: holds the sidebar's collapsed state in one place so any
-// page header can toggle it. Routes are mounted inside <main> as if they
-// were the original `index.html`, `report.html`, etc.
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
-  const toggle = () => setCollapsed((c) => !c);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
 
-  // Reflect sidebar state on the app container so the mobile burger
-  // can render its backdrop via CSS.
+  // Close mobile drawer automatically on route change
   useEffect(() => {
-    const el = document.querySelector('.app-container');
-    if (!el) return;
-    el.classList.toggle('sidebar-open', !collapsed);
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Trigger Plotly resize when sidebar expands/collapses
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 280);
+    return () => clearTimeout(timer);
   }, [collapsed]);
 
+  const handleToggleSidebar = () => {
+    if (window.innerWidth <= 1024) {
+      setMobileOpen((o) => !o);
+    } else {
+      setCollapsed((c) => !c);
+    }
+  };
+
   return (
-    <div className="app-container">
-      <Sidebar collapsed={collapsed} onClose={() => setCollapsed(true)} />
+    <div
+      className={`app-container ${collapsed ? 'sidebar-collapsed' : ''} ${
+        mobileOpen ? 'sidebar-mobile-open' : ''
+      }`}
+    >
+      {/* Mobile Backdrop */}
+      {mobileOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        collapsed={collapsed}
+        mobileOpen={mobileOpen}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
 
       <main className="main-content">
         <Routes>
-          <Route path="/" element={<Dashboard onToggleSidebar={toggle} />} />
+          <Route
+            path="/"
+            element={<Dashboard onToggleSidebar={handleToggleSidebar} />}
+          />
           <Route
             path="/resource"
-            element={<Resource onToggleSidebar={toggle} />}
+            element={<Resource onToggleSidebar={handleToggleSidebar} />}
           />
           <Route
             path="/report"
-            element={<Report onToggleSidebar={toggle} />}
+            element={<Report onToggleSidebar={handleToggleSidebar} />}
           />
           <Route
             path="/weather"
-            element={<Weather onToggleSidebar={toggle} />}
+            element={<Weather onToggleSidebar={handleToggleSidebar} />}
           />
-          <Route path="/news" element={<News onToggleSidebar={toggle} />} />
+          <Route
+            path="/news"
+            element={<News onToggleSidebar={handleToggleSidebar} />}
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      {/* Same chatbot embed that the original site used on every page */}
       <ZapierChat />
     </div>
   );

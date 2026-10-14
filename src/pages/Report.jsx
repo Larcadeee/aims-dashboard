@@ -226,8 +226,6 @@ export default function Report({ onToggleSidebar }) {
       alert('There are no records for this date to print!');
       return;
     }
-    // Open the personnel modal first; the user can edit names/roles
-    // and confirm to actually open the print window.
     setShowPersonnelModal(true);
   }
 
@@ -334,6 +332,206 @@ export default function Report({ onToggleSidebar }) {
 
   return (
     <div className="container">
+      {/* Scoped Popup Modal Styles so the Print Dialog always renders as a clean centered overlay */}
+      <style>{`
+        .elog-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background-color: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 2000;
+          animation: elogFadeIn 0.18s ease-out;
+        }
+        @keyframes elogFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes elogSlideUp {
+          from { opacity: 0; transform: translateY(12px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .elog-modal-card {
+          background-color: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 920px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+          overflow: hidden;
+          animation: elogSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .elog-modal-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 20px 24px 16px 24px;
+          border-bottom: 1px solid #e2e8f0;
+          background-color: #f8fafc;
+        }
+        .elog-modal-title-group h3 {
+          margin: 0;
+          font-size: 1.15rem;
+          font-weight: 700;
+          color: #0f172a;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .elog-modal-title-group p {
+          margin: 6px 0 0 0;
+          font-size: 0.85rem;
+          color: #64748b;
+        }
+        .elog-modal-close {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background-color: #ffffff;
+          color: #64748b;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: all 0.15s ease;
+        }
+        .elog-modal-close:hover {
+          background-color: #f1f5f9;
+          color: #0f172a;
+        }
+        .elog-modal-body {
+          padding: 20px 24px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .elog-shift-grid {
+          display: grid;
+          grid-template-columns: 200px 1fr;
+          gap: 14px;
+        }
+        .elog-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .elog-field label {
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: #475569;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+        }
+        .elog-personnel-columns {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          margin-top: 4px;
+        }
+        .elog-person-block {
+          background-color: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .elog-person-block-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 4px;
+        }
+        .elog-person-block-header h4 {
+          margin: 0;
+          font-size: 0.92rem;
+          font-weight: 700;
+          color: #1e293b;
+        }
+        .elog-person-row {
+          display: grid;
+          grid-template-columns: 1.25fr 1fr 36px;
+          gap: 8px;
+          align-items: center;
+        }
+        .elog-person-row .form-control {
+          height: 36px;
+          font-size: 0.82rem;
+          padding: 0 10px;
+          background-color: #ffffff;
+        }
+        .elog-btn-trash {
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background-color: #ffffff;
+          color: #94a3b8;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .elog-btn-trash:hover {
+          background-color: #fef2f2;
+          border-color: #fecaca;
+          color: #ef4444;
+        }
+        .elog-btn-add {
+          margin-top: 4px;
+          align-self: flex-start;
+          padding: 6px 12px;
+          font-size: 0.8rem;
+          border-radius: 8px;
+          background-color: #ffffff;
+          border: 1px dashed #cbd5e1;
+          color: #2563eb;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 0.15s ease;
+        }
+        .elog-btn-add:hover {
+          background-color: #eff6ff;
+          border-color: #93c5fd;
+        }
+        .elog-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 24px;
+          border-top: 1px solid #e2e8f0;
+          background-color: #f8fafc;
+        }
+        .elog-modal-footer-actions {
+          display: flex;
+          gap: 10px;
+        }
+        @media (max-width: 768px) {
+          .elog-shift-grid,
+          .elog-personnel-columns {
+            grid-template-columns: 1fr;
+          }
+          .elog-person-row {
+            grid-template-columns: 1fr 1fr 34px;
+          }
+        }
+      `}</style>
+
       <PageHeader title="E-Log Reports" onToggleSidebar={onToggleSidebar} />
       <p style={{ color: '#64748b', margin: '0 0 25px 0', fontSize: '0.95rem' }}>
         Review, filter, and batch print incident logs.
@@ -381,7 +579,12 @@ export default function Report({ onToggleSidebar }) {
             />
           </div>
           <div className="filter-actions">
-            <button id="btn-clear" className="btn btn-secondary" onClick={clearAll} style={{ height: 42 }}>
+            <button
+              id="btn-clear"
+              className="btn btn-secondary"
+              onClick={clearAll}
+              style={{ height: 42 }}
+            >
               Clear Filters
             </button>
             <button
@@ -396,16 +599,26 @@ export default function Report({ onToggleSidebar }) {
                 transition: 'all 0.2s ease',
               }}
             >
-              🖨️ Print Report
+              <i className="fa-solid fa-print" /> Print Report
             </button>
           </div>
         </div>
       </div>
 
       <div className="panel panel-no-margin">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 15,
+          }}
+        >
           <h3>Incident Records</h3>
-          <div id="record-count" style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 500 }}>
+          <div
+            id="record-count"
+            style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 500 }}
+          >
             {allRows.length === 0
               ? 'Loading...'
               : filtered.isFiltered
@@ -473,6 +686,8 @@ export default function Report({ onToggleSidebar }) {
         open={showPersonnelModal}
         onCancel={() => setShowPersonnelModal(false)}
         onConfirm={confirmPrint}
+        recordCount={filtered.rows.length}
+        dateVal={dateVal}
         incoming={incoming}
         setIncoming={setIncoming}
         outgoing={outgoing}
@@ -488,13 +703,13 @@ export default function Report({ onToggleSidebar }) {
   );
 }
 
-// Modal that lets the dispatcher confirm/edit who is on shift before
-// opening the print window. Keeps the print layout in sync with the
-// names the user actually wants printed.
+// Centered Popup Modal for confirming shift & personnel details before printing.
 function PersonnelModal({
   open,
   onCancel,
   onConfirm,
+  recordCount,
+  dateVal,
   incoming,
   setIncoming,
   outgoing,
@@ -506,6 +721,15 @@ function PersonnelModal({
   turnoverText,
   setTurnoverText,
 }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onCancel]);
+
   if (!open) return null;
 
   const updatePerson = (list, setList, idx, patch) => {
@@ -516,69 +740,96 @@ function PersonnelModal({
     setList(list.filter((_, i) => i !== idx));
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal-card">
-        <div className="modal-header">
-          <h3 style={{ margin: 0 }}>Confirm Print Layout</h3>
-          <button className="sidebar-close" type="button" onClick={onCancel} aria-label="Close">
+    <div
+      className="elog-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className="elog-modal-card">
+        <div className="elog-modal-header">
+          <div className="elog-modal-title-group">
+            <h3>
+              <i className="fa-solid fa-print" style={{ color: '#2563eb' }} />
+              Confirm Print Layout
+            </h3>
+            <p>
+              Edit the personnel and shift information before printing. The report
+              will be rendered in <b>landscape</b> orientation.
+            </p>
+          </div>
+          <button
+            className="elog-modal-close"
+            type="button"
+            onClick={onCancel}
+            aria-label="Close modal"
+          >
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
-        <p style={{ marginTop: 0, color: '#64748b' }}>
-          Edit the personnel and shift information before printing. The print will be
-          rendered in <b>landscape</b> orientation.
-        </p>
 
-        <div className="filter-group" style={{ flex: '0 0 auto' }}>
-          <label>Shift Label</label>
-          <input
-            className="form-control"
-            value={shiftLabel}
-            onChange={(e) => setShiftLabel(e.target.value)}
-            placeholder="e.g. PM SHIFT"
-          />
-        </div>
-        <div className="filter-group" style={{ flex: '0 0 auto' }}>
-          <label>Assumed Duties Text</label>
-          <input
-            className="form-control"
-            value={assumedText}
-            onChange={(e) => setAssumedText(e.target.value)}
-          />
-        </div>
-        <div className="filter-group" style={{ flex: '0 0 auto' }}>
-          <label>Turn-over Banner Text</label>
-          <input
-            className="form-control"
-            value={turnoverText}
-            onChange={(e) => setTurnoverText(e.target.value)}
-          />
+        <div className="elog-modal-body">
+          <div className="elog-shift-grid">
+            <div className="elog-field">
+              <label>Shift Label</label>
+              <input
+                className="form-control"
+                value={shiftLabel}
+                onChange={(e) => setShiftLabel(e.target.value)}
+                placeholder="e.g. PM SHIFT"
+              />
+            </div>
+            <div className="elog-field">
+              <label>Assumed Duties Text</label>
+              <input
+                className="form-control"
+                value={assumedText}
+                onChange={(e) => setAssumedText(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="elog-field">
+            <label>Turn-over Banner Text</label>
+            <input
+              className="form-control"
+              value={turnoverText}
+              onChange={(e) => setTurnoverText(e.target.value)}
+            />
+          </div>
+
+          <div className="elog-personnel-columns">
+            <PersonBlock
+              title="Incoming Personnel"
+              people={incoming}
+              onAdd={() => addPerson(incoming, setIncoming)}
+              onRemove={(i) => removePerson(incoming, setIncoming, i)}
+              onChange={(i, patch) => updatePerson(incoming, setIncoming, i, patch)}
+            />
+            <PersonBlock
+              title="Outgoing Personnel"
+              people={outgoing}
+              onAdd={() => addPerson(outgoing, setOutgoing)}
+              onRemove={(i) => removePerson(outgoing, setOutgoing, i)}
+              onChange={(i, patch) => updatePerson(outgoing, setOutgoing, i, patch)}
+            />
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 14 }}>
-          <PersonBlock
-            title="Incoming Personnel"
-            people={incoming}
-            onAdd={() => addPerson(incoming, setIncoming)}
-            onRemove={(i) => removePerson(incoming, setIncoming, i)}
-            onChange={(i, patch) => updatePerson(incoming, setIncoming, i, patch)}
-          />
-          <PersonBlock
-            title="Outgoing Personnel"
-            people={outgoing}
-            onAdd={() => addPerson(outgoing, setOutgoing)}
-            onRemove={(i) => removePerson(outgoing, setOutgoing, i)}
-            onChange={(i, patch) => updatePerson(outgoing, setOutgoing, i, patch)}
-          />
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" type="button" onClick={onConfirm}>
-            <i className="fa-solid fa-print" /> Print Now
-          </button>
+        <div className="elog-modal-footer">
+          <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>
+            Ready to print <b>{recordCount}</b> record(s) for <b>{dateVal}</b>
+          </span>
+          <div className="elog-modal-footer-actions">
+            <button className="btn btn-secondary" type="button" onClick={onCancel}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" type="button" onClick={onConfirm}>
+              <i className="fa-solid fa-print" /> Print Now
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -587,40 +838,42 @@ function PersonnelModal({
 
 function PersonBlock({ title, people, onAdd, onRemove, onChange }) {
   return (
-    <div className="person-block">
-      <h4 style={{ margin: '0 0 10px 0' }}>{title}</h4>
+    <div className="elog-person-block">
+      <div className="elog-person-block-header">
+        <h4>{title}</h4>
+        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
+          {people.length} listed
+        </span>
+      </div>
+
       {people.map((p, i) => (
-        <div key={i} className="person-row">
+        <div key={i} className="elog-person-row">
           <input
             className="form-control"
-            placeholder="Name"
+            placeholder="Full Name"
             value={p.name}
             onChange={(e) => onChange(i, { name: e.target.value })}
           />
           <input
             className="form-control"
-            placeholder="Role"
+            placeholder="Role / Designation"
             value={p.role}
             onChange={(e) => onChange(i, { role: e.target.value })}
           />
           <button
             type="button"
-            className="sidebar-close"
-            style={{ display: 'flex', position: 'static', color: '#94a3b8' }}
+            className="elog-btn-trash"
             onClick={() => onRemove(i)}
             aria-label="Remove person"
+            title="Remove person"
           >
-            <i className="fa-solid fa-trash" />
+            <i className="fa-solid fa-trash-can" />
           </button>
         </div>
       ))}
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={onAdd}
-        style={{ marginTop: 8, alignSelf: 'flex-start' }}
-      >
-        <i className="fa-solid fa-plus" /> Add
+
+      <button type="button" className="elog-btn-add" onClick={onAdd}>
+        <i className="fa-solid fa-plus" /> Add Personnel
       </button>
     </div>
   );

@@ -328,9 +328,9 @@ export default function Dashboard({ onToggleSidebar }) {
 
       <div className="metrics-grid" data-section="metrics">
         <MetricCard label="Total Calls" value={loading ? '…' : metrics.total.toLocaleString()} />
-        <MetricCard label="Incident Calls" value={loading ? '…' : metrics.incident.toLocaleString()} />
-        <MetricCard label="Priority 1 Calls" value={loading ? '…' : metrics.p1.toLocaleString()} />
-        <MetricCard label="Priority 2 Calls" value={loading ? '…' : metrics.p2.toLocaleString()} />
+        <MetricCard label="Total Incident Responded" value={loading ? '…' : metrics.incident.toLocaleString()} />
+        <MetricCard label="Priority 1 " value={loading ? '…' : metrics.p1.toLocaleString()} />
+        <MetricCard label="Priority 2 " value={loading ? '…' : metrics.p2.toLocaleString()} />
         <MetricCard label="Disregarded / N/A" value={loading ? '…' : metrics.disregarded.toLocaleString()} />
       </div>
 
