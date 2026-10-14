@@ -27,143 +27,283 @@ const EXPORT_SECTIONS = [
   { id: 'trend', label: 'Turn-Around Time Trend', icon: 'fa-solid fa-chart-line' },
 ];
 
-// Organized groups for all requested Average Time columns.
-// Each item lists candidate column names so it matches either the formula header or short header.
+// All 17 individual time columns with flexible header aliases for the Google Sheet
 const AVG_TIME_GROUPS = [
   {
-    id: 'response',
-    label: 'Response',
-    icon: 'fa-solid fa-bolt',
+    id: 'logged',
+    label: 'Logged (7)',
+    title: 'Standard Logged Times',
+    icon: 'fa-regular fa-clock',
+    items: [
+      {
+        label: 'Dispatch Time',
+        code: 'Logged',
+        color: '#2563eb',
+        column: 'DISPATCH TIME',
+        aliases: ['DISPATCH TIME', 'DISPATCH TIME (N)'],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'Run Time',
+        code: 'Logged',
+        color: '#0284c7',
+        column: 'RUN TIME',
+        aliases: ['RUN TIME', 'RUN TIME (O)', 'PROCEEDING TO AREA'],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'Scene Time',
+        code: 'Logged',
+        color: '#0d9488',
+        column: 'SCENE TIME',
+        aliases: [
+          'SCENE TIME',
+          'SCENE TIME (P)',
+          'ARRIVE AT SCENE',
+          'ARRIVAL AT SCENE',
+          'ARRIVE AT SCENE/ DESTINATION',
+        ],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'En Route to Higher Facility',
+        code: 'Logged',
+        color: '#059669',
+        column: 'EN ROUTE TO HIGHER FACILITY',
+        aliases: [
+          'EN ROUTE TO HIGHER FACILITY',
+          'EN ROUTE TO FACILITY',
+          'ENROUTE TO HIGHER FACILITY',
+          'PROCEEDING TO HOS/RES.',
+          'PROCEEDING TO HOS',
+        ],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'Arrival to Higher Facility',
+        code: 'Logged',
+        color: '#d97706',
+        column: 'ARRIVAL TO HIGHER FACILITY',
+        aliases: [
+          'ARRIVAL TO HIGHER FACILITY',
+          'ARRIVAL AT HIGHER FACILITY',
+          'ARRIVE AT HIGHER FACILITY',
+          'ARRIVAL AT HOS/RES.',
+          'ARRIVAL TO FACILITY',
+        ],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'Endorsement Time',
+        code: 'Logged',
+        color: '#e11d48',
+        column: 'ENDORSEMENT TIME',
+        aliases: ['ENDORSEMENT TIME', 'ENDORSED TIME', 'ENDORSED'],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+      {
+        label: 'Arrival at Base Time',
+        code: 'Logged',
+        color: '#475569',
+        column: 'ARRIVAL AT BASE TIME',
+        aliases: [
+          'ARRIVAL AT BASE TIME',
+          'ARRIVE AT BASE TIME',
+          'ARRIVAL AT BASE',
+          'ARRIVE AT BASE',
+        ],
+        exclude: ['COMPUTED', 'AVERAGED'],
+      },
+    ],
+  },
+  {
+    id: 'computed',
+    label: 'Computed (6)',
+    title: 'Computed Intervals',
+    icon: 'fa-solid fa-calculator',
     items: [
       {
         label: 'Computed Dispatch Time',
         code: 'N-E',
         color: '#2563eb',
-        candidates: ['COMPUTED DISPATCH TIME (N-E)', 'DISPATCH TIME'],
+        column: 'COMPUTED DISPATCH TIME (N-E)',
+        aliases: ['COMPUTED DISPATCH TIME (N-E)', 'COMPUTED DISPATCH TIME', '(N-E)'],
       },
       {
         label: 'Computed Run Time',
         code: 'O-N',
         color: '#0284c7',
-        candidates: ['COMPUTED RUN TIME (O-N)', 'RUN TIME'],
+        column: 'COMPUTED RUN TIME (O-N)',
+        aliases: ['COMPUTED RUN TIME (O-N)', 'COMPUTED RUN TIME', '(O-N)'],
       },
       {
-        label: 'Response Mobilization',
+        label: 'Computed Response Mobilization',
         code: 'P-O',
         color: '#4f46e5',
-        candidates: [
+        column: 'COMPUTED RESPONSE MOBILIZATION TIME (P-O)',
+        aliases: [
           'COMPUTED RESPONSE MOBILIZATION TIME (P-O)',
           'RESPONSE MOBILIZATION TIME',
+          '(P-O)',
         ],
       },
       {
         label: 'Computed Response Time',
         code: 'P-E',
         color: '#7c3aed',
-        candidates: ['COMPUTED RESPONSE TIME (P-E)', 'RESPONSE TIME'],
+        column: 'COMPUTED RESPONSE TIME (P-E)',
+        aliases: ['COMPUTED RESPONSE TIME (P-E)', 'COMPUTED RESPONSE TIME', '(P-E)'],
       },
-    ],
-  },
-  {
-    id: 'scene',
-    label: 'Scene & Transport',
-    icon: 'fa-solid fa-truck-medical',
-    items: [
       {
         label: 'Computed Scene Time',
         code: 'Q-P',
         color: '#0d9488',
-        candidates: ['COMPUTED SCENE TIME (Q-P)', 'SCENE TIME'],
+        column: 'COMPUTED SCENE TIME (Q-P)',
+        aliases: ['COMPUTED SCENE TIME (Q-P)', 'COMPUTED SCENE TIME', '(Q-P)'],
       },
       {
         label: 'Computed Transport Time',
         code: 'R-Q',
         color: '#059669',
-        candidates: [
-          'COMPUTED TRANSPORT TIME (R-Q)',
-          'EN ROUTE TO HIGHER FACILITY',
-        ],
-      },
-      {
-        label: 'Arrival to Facility Time',
-        code: 'Facility',
-        color: '#d97706',
-        candidates: [
-          'AVERAGED ARRIVAL TO FACILITY TIME',
-          'ARRIVAL TO HIGHER FACILITY',
-        ],
-      },
-      {
-        label: 'En Route to Higher Facility',
-        code: 'En Route',
-        color: '#ea580c',
-        candidates: [
-          'EN ROUTE TO HIGHER FACILITY',
-          'COMPUTED TRANSPORT TIME (R-Q)',
-        ],
+        column: 'COMPUTED TRANSPORT TIME (R-Q)',
+        aliases: ['COMPUTED TRANSPORT TIME (R-Q)', 'COMPUTED TRANSPORT TIME', '(R-Q)'],
       },
     ],
   },
   {
-    id: 'turnover',
-    label: 'Base & Turnaround',
-    icon: 'fa-solid fa-rotate',
+    id: 'averaged',
+    label: 'Averaged (4)',
+    title: 'Averaged Facility & Turnaround',
+    icon: 'fa-solid fa-chart-line',
     items: [
       {
-        label: 'Endorsement Time',
+        label: 'Averaged Arrival to Facility',
+        code: 'Facility',
+        color: '#ea580c',
+        column: 'AVERAGED ARRIVAL TO FACILITY TIME',
+        aliases: [
+          'AVERAGED ARRIVAL TO FACILITY TIME',
+          'AVERAGED ARRIVAL TO HIGHER FACILITY',
+          'AVERAGE ARRIVAL TO FACILITY',
+        ],
+      },
+      {
+        label: 'Averaged Endorsement Time',
         code: 'S-R',
         color: '#e11d48',
-        candidates: ['AVERAGED ENDORSEMENT TIME (S-R)', 'ENDORSEMENT TIME'],
+        column: 'AVERAGED ENDORSEMENT TIME (S-R)',
+        aliases: ['AVERAGED ENDORSEMENT TIME (S-R)', 'AVERAGED ENDORSEMENT TIME', '(S-R)'],
       },
       {
-        label: 'Arrival at Base Time',
+        label: 'Averaged Arrival at Base',
         code: 'T-S',
         color: '#475569',
-        candidates: [
-          'AVERAGED ARRIVAL AT BASE TIME (T-S)',
-          'ARRIVAL AT BASE TIME',
-        ],
+        column: 'AVERAGED ARRIVAL AT BASE TIME (T-S)',
+        aliases: ['AVERAGED ARRIVAL AT BASE TIME (T-S)', 'AVERAGED ARRIVAL AT BASE', '(T-S)'],
       },
       {
-        label: 'Turn Around Time',
+        label: 'Averaged Turn Around Time',
         code: 'T-E',
         color: '#1d4ed8',
-        candidates: [
-          'AVERAGED TURN AROUND TIME (T-E)',
-          'TURN AROUND TIME',
-        ],
+        column: 'AVERAGED TURN AROUND TIME (T-E)',
+        aliases: ['AVERAGED TURN AROUND TIME (T-E)', 'AVERAGED TURN AROUND TIME', '(T-E)'],
       },
     ],
   },
 ];
 
-// Helper that resolves the matching column header in the dataset (case-insensitive & tolerant of extra spaces)
-function computeSmartAverage(rows, candidates) {
-  if (!rows || rows.length === 0) return '00:00:00';
-  const sampleKeys = Object.keys(rows[0] || {});
+// Parses HH:MM:SS, HH:MM, or 12-hour AM/PM clock strings into total seconds
+function parseFlexibleTimeToSeconds(rawVal) {
+  if (!rawVal) return null;
+  const str = String(rawVal).trim();
+  if (!str || /^(N\/A|NONE|-|0|#VALUE!|#REF!)$/i.test(str)) return null;
 
-  for (const cand of candidates) {
-    const normalizedCand = cand.toUpperCase().replace(/\s+/g, ' ').trim();
-    // 1. Exact case-insensitive match
-    let matchedKey = sampleKeys.find(
-      (k) => k.toUpperCase().replace(/\s+/g, ' ').trim() === normalizedCand
-    );
-    // 2. Partial includes match if exact wasn't found
-    if (!matchedKey) {
-      matchedKey = sampleKeys.find((k) =>
-        k.toUpperCase().replace(/\s+/g, ' ').includes(normalizedCand)
-      );
-    }
-    if (matchedKey) {
-      const val = getAverageTime(rows, matchedKey);
-      if (val && val !== '00:00:00' && val !== '--') {
-        return val;
-      }
-    }
+  // Match HH:MM(:SS) with optional AM/PM (also works if preceded by a date)
+  const match = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const mins = parseInt(match[2], 10);
+  const secs = match[3] ? parseInt(match[3], 10) : 0;
+  const ampm = match[4] ? match[4].toUpperCase() : null;
+
+  if (Number.isNaN(hours) || Number.isNaN(mins) || Number.isNaN(secs)) return null;
+
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+
+  const total = hours * 3600 + mins * 60 + secs;
+  return total > 0 ? total : null;
+}
+
+function formatSecondsToHMS(totalSeconds) {
+  if (!totalSeconds || totalSeconds <= 0) return '00:00:00';
+  const rounded = Math.round(totalSeconds);
+  const h = Math.floor(rounded / 3600);
+  const m = Math.floor((rounded % 3600) / 60);
+  const s = rounded % 60;
+  return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
+}
+
+// Finds the right column in the sheet (ignoring punctuation/case differences) and computes the average
+function computeExactColumnAverage(rows, itemOrColumn) {
+  if (!rows || rows.length === 0) return '00:00:00';
+
+  const item =
+    typeof itemOrColumn === 'string'
+      ? { column: itemOrColumn, aliases: [itemOrColumn], exclude: [] }
+      : itemOrColumn;
+
+  const sampleKeys = Object.keys(rows[0] || {});
+  const normalize = (s) =>
+    String(s)
+      .toUpperCase()
+      .replace(/[^A-Z0-9()-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const aliases = (item.aliases || [item.column]).map(normalize);
+  const excludes = (item.exclude || []).map(normalize);
+
+  const isExcluded = (keyNorm) =>
+    excludes.some((ex) => keyNorm.includes(ex));
+
+  // 1. Try exact normalized match first
+  let matchedKey = sampleKeys.find((k) => {
+    const kNorm = normalize(k);
+    if (isExcluded(kNorm)) return false;
+    return aliases.some((a) => kNorm === a);
+  });
+
+  // 2. Try partial / startsWith / includes match if exact wasn't found
+  if (!matchedKey) {
+    matchedKey = sampleKeys.find((k) => {
+      const kNorm = normalize(k);
+      if (isExcluded(kNorm)) return false;
+      return aliases.some((a) => kNorm.includes(a) || a.includes(kNorm));
+    });
   }
 
-  // Fallback to first candidate
-  return getAverageTime(rows, candidates[0]);
+  if (!matchedKey) return '00:00:00';
+
+  // Try your existing getAverageTime first
+  const standardAvg = getAverageTime(rows, matchedKey);
+  if (standardAvg && standardAvg !== '00:00:00' && standardAvg !== '--') {
+    return standardAvg;
+  }
+
+  // Fallback parser for 12-hour AM/PM or HH:MM cells
+  let sum = 0;
+  let count = 0;
+  rows.forEach((r) => {
+    const secs = parseFlexibleTimeToSeconds(r[matchedKey]);
+    if (secs !== null) {
+      sum += secs;
+      count += 1;
+    }
+  });
+
+  return count > 0 ? formatSecondsToHMS(sum / count) : '00:00:00';
 }
 
 export default function Dashboard({ onToggleSidebar }) {
@@ -177,7 +317,7 @@ export default function Dashboard({ onToggleSidebar }) {
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [dateVal, setDateVal] = useState('');
 
-  // Active tab for organized Average Times panel ('all' | 'response' | 'scene' | 'turnover')
+  // Active tab for the 17 Average Times ('all' | 'logged' | 'computed' | 'averaged')
   const [avgTab, setAvgTab] = useState('all');
 
   // Export modal state
@@ -297,13 +437,13 @@ export default function Dashboard({ onToggleSidebar }) {
 
   const metrics = useMemo(() => computeMetrics(filtered), [filtered]);
 
-  // Compute all organized Average Time metrics
+  // Compute all 17 Average Time columns using flexible alias & timestamp matching
   const computedAvgGroups = useMemo(() => {
     return AVG_TIME_GROUPS.map((group) => ({
       ...group,
       computedItems: group.items.map((item) => ({
         ...item,
-        value: loading ? '…' : computeSmartAverage(filtered, item.candidates),
+        value: loading ? '…' : computeExactColumnAverage(filtered, item),
       })),
     }));
   }, [filtered, loading]);
@@ -391,7 +531,7 @@ export default function Dashboard({ onToggleSidebar }) {
 
   return (
     <div className="container">
-      {/* Scoped styles for the organized Average Times panel */}
+      {/* Scoped styles for the 17-item Average Times panel */}
       <style>{`
         .avg-panel-wrapper {
           display: flex;
@@ -407,25 +547,25 @@ export default function Dashboard({ onToggleSidebar }) {
           margin-bottom: 10px;
         }
         .avg-tabs-bar {
-          display: flex;
-          gap: 5px;
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 4px;
           background: #f1f5f9;
           padding: 4px;
           border-radius: 10px;
           margin-bottom: 12px;
-          overflow-x: auto;
         }
         .avg-tab-pill {
-          flex: 1;
           border: none;
           background: transparent;
           color: #64748b;
-          font-size: 0.73rem;
+          font-size: 0.71rem;
           font-weight: 700;
-          padding: 6px 8px;
+          padding: 6px 4px;
           border-radius: 7px;
           cursor: pointer;
           white-space: nowrap;
+          text-align: center;
           transition: all 0.15s ease;
         }
         .avg-tab-pill:hover {
@@ -457,7 +597,7 @@ export default function Dashboard({ onToggleSidebar }) {
           gap: 8px;
         }
         .avg-group-title {
-          font-size: 0.72rem;
+          font-size: 0.71rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.04em;
@@ -472,52 +612,51 @@ export default function Dashboard({ onToggleSidebar }) {
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px;
         }
-        .avg-cards-grid.single-col {
-          grid-template-columns: 1fr;
-        }
         .avg-metric-tile {
           background: #f8fafc;
           border: 1px solid #e2e8f0;
-          border-left-width: 3px;
+          border-left-width: 3.5px;
           border-radius: 10px;
-          padding: 10px 12px;
+          padding: 10px 11px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          justify-content: space-between;
+          gap: 6px;
           min-width: 0;
           transition: background-color 0.15s ease, transform 0.15s ease;
         }
         .avg-metric-tile:hover {
           background: #ffffff;
           transform: translateY(-1px);
-          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.04);
+          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.05);
         }
         .avg-metric-top {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
           gap: 6px;
         }
         .avg-metric-name {
-          font-size: 0.74rem;
+          font-size: 0.73rem;
           font-weight: 600;
-          color: #475569;
+          color: #334155;
           line-height: 1.25;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
           overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
         .avg-metric-badge {
-          font-size: 0.65rem;
+          font-size: 0.62rem;
           font-weight: 700;
-          padding: 1px 6px;
+          padding: 2px 5px;
           border-radius: 999px;
           background: #e2e8f0;
-          color: #334155;
+          color: #475569;
           flex-shrink: 0;
         }
         .avg-metric-val {
-          font-size: 1.15rem;
+          font-size: 1.1rem;
           font-weight: 800;
           color: #1e293b;
           font-variant-numeric: tabular-nums;
@@ -526,6 +665,9 @@ export default function Dashboard({ onToggleSidebar }) {
         @media (max-width: 520px) {
           .avg-cards-grid {
             grid-template-columns: 1fr;
+          }
+          .avg-tabs-bar {
+            grid-template-columns: repeat(2, 1fr);
           }
         }
       `}</style>
@@ -663,7 +805,7 @@ export default function Dashboard({ onToggleSidebar }) {
       <hr />
 
       <div className="layout-30-70" data-section="trend-and-averages">
-        {/* Organized Average Times Column */}
+        {/* Organized 17-Column Average Times Panel */}
         <div
           className="panel panel-no-margin avg-panel-wrapper"
           data-section="averages"
@@ -677,18 +819,18 @@ export default function Dashboard({ onToggleSidebar }) {
                 fontWeight: 600,
               }}
             >
-              HH:MM:SS
+              17 Metrics • HH:MM:SS
             </span>
           </div>
 
-          {/* Category Filter Tabs */}
+          {/* 4 Compact Category Filter Tabs */}
           <div className="avg-tabs-bar" role="tablist">
             <button
               type="button"
               className={`avg-tab-pill ${avgTab === 'all' ? 'active' : ''}`}
               onClick={() => setAvgTab('all')}
             >
-              All (11)
+              All (17)
             </button>
             {AVG_TIME_GROUPS.map((g) => (
               <button
@@ -708,19 +850,15 @@ export default function Dashboard({ onToggleSidebar }) {
               <div key={group.id} className="avg-group-block">
                 <div className="avg-group-title">
                   <i className={group.icon} />
-                  <span>{group.label}</span>
+                  <span>{group.title}</span>
                 </div>
-                <div
-                  className={`avg-cards-grid ${
-                    avgTab !== 'all' ? 'single-col' : ''
-                  }`}
-                >
+                <div className="avg-cards-grid">
                   {group.computedItems.map((item) => (
                     <div
-                      key={item.label}
+                      key={item.column}
                       className="avg-metric-tile"
                       style={{ borderLeftColor: item.color }}
-                      title={item.candidates.join(' / ')}
+                      title={item.column}
                     >
                       <div className="avg-metric-top">
                         <span className="avg-metric-name">{item.label}</span>
