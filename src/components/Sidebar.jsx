@@ -2,11 +2,12 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: 'fa-solid fa-house' },
+  { path: '/', label: 'Main', icon: 'fa-solid fa-house' },
   { path: '/resource', label: 'Resource Tracker', icon: 'fa-solid fa-truck-medical' },
   { path: '/report', label: 'E-Log Reports', icon: 'fa-solid fa-file-lines' },
   { path: '/weather', label: 'Weather', icon: 'fa-solid fa-cloud-sun-rain' },
   { path: '/news', label: 'News & Updates', icon: 'fa-solid fa-newspaper' },
+  { path: '/custom', label: 'Custom View', icon: 'fa-solid fa-wand-magic-sparkles' },
 ];
 
 export default function Sidebar({

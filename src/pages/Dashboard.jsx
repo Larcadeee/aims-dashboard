@@ -18,9 +18,7 @@ const GID = '1297922850';
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
 const GEOJSON_URL = `${import.meta.env.BASE_URL}data/Boundary.json`;
 
-// Section registry used by the export modal. `selector` is the
-// `data-section` attribute on the DOM node we want to capture. `label`
-// is what the user sees in the picker.
+// Section registry used by the export modal.
 const EXPORT_SECTIONS = [
   { id: 'metrics', label: 'Key Metrics', icon: 'fa-solid fa-chart-simple' },
   { id: 'heatmap', label: 'Heat Map', icon: 'fa-solid fa-map-location-dot' },
@@ -29,29 +27,169 @@ const EXPORT_SECTIONS = [
   { id: 'trend', label: 'Turn-Around Time Trend', icon: 'fa-solid fa-chart-line' },
 ];
 
-// Top-level Dashboard: loads the data once, owns filter state, and
-// pushes the filtered rows down to all the chart subcomponents.
+// Organized groups for all requested Average Time columns.
+// Each item lists candidate column names so it matches either the formula header or short header.
+const AVG_TIME_GROUPS = [
+  {
+    id: 'response',
+    label: 'Response',
+    icon: 'fa-solid fa-bolt',
+    items: [
+      {
+        label: 'Computed Dispatch Time',
+        code: 'N-E',
+        color: '#2563eb',
+        candidates: ['COMPUTED DISPATCH TIME (N-E)', 'DISPATCH TIME'],
+      },
+      {
+        label: 'Computed Run Time',
+        code: 'O-N',
+        color: '#0284c7',
+        candidates: ['COMPUTED RUN TIME (O-N)', 'RUN TIME'],
+      },
+      {
+        label: 'Response Mobilization',
+        code: 'P-O',
+        color: '#4f46e5',
+        candidates: [
+          'COMPUTED RESPONSE MOBILIZATION TIME (P-O)',
+          'RESPONSE MOBILIZATION TIME',
+        ],
+      },
+      {
+        label: 'Computed Response Time',
+        code: 'P-E',
+        color: '#7c3aed',
+        candidates: ['COMPUTED RESPONSE TIME (P-E)', 'RESPONSE TIME'],
+      },
+    ],
+  },
+  {
+    id: 'scene',
+    label: 'Scene & Transport',
+    icon: 'fa-solid fa-truck-medical',
+    items: [
+      {
+        label: 'Computed Scene Time',
+        code: 'Q-P',
+        color: '#0d9488',
+        candidates: ['COMPUTED SCENE TIME (Q-P)', 'SCENE TIME'],
+      },
+      {
+        label: 'Computed Transport Time',
+        code: 'R-Q',
+        color: '#059669',
+        candidates: [
+          'COMPUTED TRANSPORT TIME (R-Q)',
+          'EN ROUTE TO HIGHER FACILITY',
+        ],
+      },
+      {
+        label: 'Arrival to Facility Time',
+        code: 'Facility',
+        color: '#d97706',
+        candidates: [
+          'AVERAGED ARRIVAL TO FACILITY TIME',
+          'ARRIVAL TO HIGHER FACILITY',
+        ],
+      },
+      {
+        label: 'En Route to Higher Facility',
+        code: 'En Route',
+        color: '#ea580c',
+        candidates: [
+          'EN ROUTE TO HIGHER FACILITY',
+          'COMPUTED TRANSPORT TIME (R-Q)',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'turnover',
+    label: 'Base & Turnaround',
+    icon: 'fa-solid fa-rotate',
+    items: [
+      {
+        label: 'Endorsement Time',
+        code: 'S-R',
+        color: '#e11d48',
+        candidates: ['AVERAGED ENDORSEMENT TIME (S-R)', 'ENDORSEMENT TIME'],
+      },
+      {
+        label: 'Arrival at Base Time',
+        code: 'T-S',
+        color: '#475569',
+        candidates: [
+          'AVERAGED ARRIVAL AT BASE TIME (T-S)',
+          'ARRIVAL AT BASE TIME',
+        ],
+      },
+      {
+        label: 'Turn Around Time',
+        code: 'T-E',
+        color: '#1d4ed8',
+        candidates: [
+          'AVERAGED TURN AROUND TIME (T-E)',
+          'TURN AROUND TIME',
+        ],
+      },
+    ],
+  },
+];
+
+// Helper that resolves the matching column header in the dataset (case-insensitive & tolerant of extra spaces)
+function computeSmartAverage(rows, candidates) {
+  if (!rows || rows.length === 0) return '00:00:00';
+  const sampleKeys = Object.keys(rows[0] || {});
+
+  for (const cand of candidates) {
+    const normalizedCand = cand.toUpperCase().replace(/\s+/g, ' ').trim();
+    // 1. Exact case-insensitive match
+    let matchedKey = sampleKeys.find(
+      (k) => k.toUpperCase().replace(/\s+/g, ' ').trim() === normalizedCand
+    );
+    // 2. Partial includes match if exact wasn't found
+    if (!matchedKey) {
+      matchedKey = sampleKeys.find((k) =>
+        k.toUpperCase().replace(/\s+/g, ' ').includes(normalizedCand)
+      );
+    }
+    if (matchedKey) {
+      const val = getAverageTime(rows, matchedKey);
+      if (val && val !== '00:00:00' && val !== '--') {
+        return val;
+      }
+    }
+  }
+
+  // Fallback to first candidate
+  return getAverageTime(rows, candidates[0]);
+}
+
 export default function Dashboard({ onToggleSidebar }) {
   const [rawData, setRawData] = useState([]);
   const [geoJson, setGeoJson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filter state (mirrors the four <input>s in the original header).
+  // Filter state
   const [priority, setPriority] = useState('All');
   const [selectedTeams, setSelectedTeams] = useState([]);
   const [dateVal, setDateVal] = useState('');
 
+  // Active tab for organized Average Times panel ('all' | 'response' | 'scene' | 'turnover')
+  const [avgTab, setAvgTab] = useState('all');
+
   // Export modal state
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportMode, setExportMode] = useState('download'); // 'download' | 'copy'
+  const [exportMode, setExportMode] = useState('download');
   const [exportSectionsSelected, setExportSectionsSelected] = useState(
     () => new Set(EXPORT_SECTIONS.map((s) => s.id))
   );
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState(null);
 
-  // Refs for the imperative widgets.
+  // Refs for imperative widgets
   const teamSelectRef = useRef(null);
   const dateInputRef = useRef(null);
   const teamChoicesRef = useRef(null);
@@ -69,7 +207,7 @@ export default function Dashboard({ onToggleSidebar }) {
 
         if (cancelled) return;
 
-        // Strip hidden Alt+Enter from headers — same fix as the original.
+        // Strip hidden Alt+Enter from headers
         const cleaned = csvData.map((row) => {
           const out = {};
           Object.keys(row).forEach((k) => {
@@ -148,23 +286,27 @@ export default function Dashboard({ onToggleSidebar }) {
 
   // --- Filtered data + metrics ----------------------------------------
   const filtered = useMemo(
-    () => applyDashboardFilters(rawData, { priority, teams: selectedTeams, dateVal }),
+    () =>
+      applyDashboardFilters(rawData, {
+        priority,
+        teams: selectedTeams,
+        dateVal,
+      }),
     [rawData, priority, selectedTeams, dateVal]
   );
 
   const metrics = useMemo(() => computeMetrics(filtered), [filtered]);
-  const avgDispatch = useMemo(
-    () => getAverageTime(filtered, 'COMPUTED DISPATCH TIME (N-E)'),
-    [filtered]
-  );
-  const avgRun = useMemo(
-    () => getAverageTime(filtered, 'COMPUTED RUN TIME (O-N)'),
-    [filtered]
-  );
-  const avgResponse = useMemo(
-    () => getAverageTime(filtered, 'COMPUTED RESPONSE TIME (P-E)'),
-    [filtered]
-  );
+
+  // Compute all organized Average Time metrics
+  const computedAvgGroups = useMemo(() => {
+    return AVG_TIME_GROUPS.map((group) => ({
+      ...group,
+      computedItems: group.items.map((item) => ({
+        ...item,
+        value: loading ? '…' : computeSmartAverage(filtered, item.candidates),
+      })),
+    }));
+  }, [filtered, loading]);
 
   // --- Charts (re-render whenever filtered data changes) --------------
   useEffect(() => {
@@ -188,12 +330,6 @@ export default function Dashboard({ onToggleSidebar }) {
   }, [filtered, loading]);
 
   // --- Export (download / copy) ---------------------------------------
-  const openExportModal = (mode) => {
-    setExportMode(mode); // 'download' or 'copy'
-    setExportMessage(null);
-    setExportOpen(true);
-  };
-
   const toggleExportSection = (id) => {
     setExportSectionsSelected((prev) => {
       const next = new Set(prev);
@@ -211,7 +347,10 @@ export default function Dashboard({ onToggleSidebar }) {
       return;
     }
     setExporting(true);
-    setExportMessage({ type: 'info', text: exportMode === 'copy' ? 'Rendering PNG…' : 'Generating PNG…' });
+    setExportMessage({
+      type: 'info',
+      text: exportMode === 'copy' ? 'Rendering PNG…' : 'Generating PNG…',
+    });
     try {
       const blob = await exportSections(ids);
       if (exportMode === 'copy') {
@@ -224,7 +363,6 @@ export default function Dashboard({ onToggleSidebar }) {
             text: 'Copied to clipboard! Paste into Canva with ⌘V / Ctrl+V.',
           });
         } else {
-          // Fallback: trigger download if clipboard isn't available
           triggerDownload(blob, 'main-dashboard.png');
           setExportMessage({
             type: 'info',
@@ -246,16 +384,152 @@ export default function Dashboard({ onToggleSidebar }) {
     }
   };
 
-  const handleDownload = () => {
-    void runExport();
-  };
-
-  const handleCopy = () => {
-    void runExport();
-  };
+  const visibleGroups =
+    avgTab === 'all'
+      ? computedAvgGroups
+      : computedAvgGroups.filter((g) => g.id === avgTab);
 
   return (
     <div className="container">
+      {/* Scoped styles for the organized Average Times panel */}
+      <style>{`
+        .avg-panel-wrapper {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          max-height: 440px;
+        }
+        .avg-panel-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .avg-tabs-bar {
+          display: flex;
+          gap: 5px;
+          background: #f1f5f9;
+          padding: 4px;
+          border-radius: 10px;
+          margin-bottom: 12px;
+          overflow-x: auto;
+        }
+        .avg-tab-pill {
+          flex: 1;
+          border: none;
+          background: transparent;
+          color: #64748b;
+          font-size: 0.73rem;
+          font-weight: 700;
+          padding: 6px 8px;
+          border-radius: 7px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+        .avg-tab-pill:hover {
+          color: #0f172a;
+        }
+        .avg-tab-pill.active {
+          background: #ffffff;
+          color: #0f172a;
+          box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+        }
+        .avg-scroll-area {
+          flex: 1;
+          overflow-y: auto;
+          padding-right: 4px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .avg-scroll-area::-webkit-scrollbar {
+          width: 5px;
+        }
+        .avg-scroll-area::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 999px;
+        }
+        .avg-group-block {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .avg-group-title {
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #64748b;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding-left: 2px;
+        }
+        .avg-cards-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .avg-cards-grid.single-col {
+          grid-template-columns: 1fr;
+        }
+        .avg-metric-tile {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-left-width: 3px;
+          border-radius: 10px;
+          padding: 10px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          min-width: 0;
+          transition: background-color 0.15s ease, transform 0.15s ease;
+        }
+        .avg-metric-tile:hover {
+          background: #ffffff;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(15, 23, 42, 0.04);
+        }
+        .avg-metric-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+        }
+        .avg-metric-name {
+          font-size: 0.74rem;
+          font-weight: 600;
+          color: #475569;
+          line-height: 1.25;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .avg-metric-badge {
+          font-size: 0.65rem;
+          font-weight: 700;
+          padding: 1px 6px;
+          border-radius: 999px;
+          background: #e2e8f0;
+          color: #334155;
+          flex-shrink: 0;
+        }
+        .avg-metric-val {
+          font-size: 1.15rem;
+          font-weight: 800;
+          color: #1e293b;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: -0.01em;
+        }
+        @media (max-width: 520px) {
+          .avg-cards-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
       <PageHeader
         title="Live Key Metrics"
         onToggleSidebar={onToggleSidebar}
@@ -320,18 +594,41 @@ export default function Dashboard({ onToggleSidebar }) {
       )}
 
       {loading && (
-        <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#475569' }}>
+        <div
+          className="panel"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            color: '#475569',
+          }}
+        >
           <span className="spinner" />
           <span>Loading live metrics...</span>
         </div>
       )}
 
       <div className="metrics-grid" data-section="metrics">
-        <MetricCard label="Total Calls" value={loading ? '…' : metrics.total.toLocaleString()} />
-        <MetricCard label="Total Incident Responded" value={loading ? '…' : metrics.incident.toLocaleString()} />
-        <MetricCard label="Priority 1 " value={loading ? '…' : metrics.p1.toLocaleString()} />
-        <MetricCard label="Priority 2 " value={loading ? '…' : metrics.p2.toLocaleString()} />
-        <MetricCard label="Disregarded / N/A" value={loading ? '…' : metrics.disregarded.toLocaleString()} />
+        <MetricCard
+          label="Total Incident"
+          value={loading ? '…' : metrics.total.toLocaleString()}
+        />
+        <MetricCard
+          label="Incident Calls"
+          value={loading ? '…' : metrics.incident.toLocaleString()}
+        />
+        <MetricCard
+          label="Priority 1 "
+          value={loading ? '…' : metrics.p1.toLocaleString()}
+        />
+        <MetricCard
+          label="Priority 2 "
+          value={loading ? '…' : metrics.p2.toLocaleString()}
+        />
+        <MetricCard
+          label="Disregarded / N/A"
+          value={loading ? '…' : metrics.disregarded.toLocaleString()}
+        />
       </div>
 
       <hr />
@@ -366,15 +663,81 @@ export default function Dashboard({ onToggleSidebar }) {
       <hr />
 
       <div className="layout-30-70" data-section="trend-and-averages">
+        {/* Organized Average Times Column */}
         <div
-          className="panel panel-no-margin"
+          className="panel panel-no-margin avg-panel-wrapper"
           data-section="averages"
-          style={{ display: 'flex', flexDirection: 'column', gap: 15 }}
         >
-          <h3 style={{ marginBottom: 5 }}>Average Times</h3>
-          <MiniMetric label="Avg Dispatch Time" value={avgDispatch} />
-          <MiniMetric label="Avg Run Time" value={avgRun} />
-          <MiniMetric label="Avg Response Time" value={avgResponse} />
+          <div className="avg-panel-top">
+            <h3 style={{ margin: 0 }}>Average Times</h3>
+            <span
+              style={{
+                fontSize: '0.73rem',
+                color: '#64748b',
+                fontWeight: 600,
+              }}
+            >
+              HH:MM:SS
+            </span>
+          </div>
+
+          {/* Category Filter Tabs */}
+          <div className="avg-tabs-bar" role="tablist">
+            <button
+              type="button"
+              className={`avg-tab-pill ${avgTab === 'all' ? 'active' : ''}`}
+              onClick={() => setAvgTab('all')}
+            >
+              All (11)
+            </button>
+            {AVG_TIME_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                className={`avg-tab-pill ${avgTab === g.id ? 'active' : ''}`}
+                onClick={() => setAvgTab(g.id)}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Scrollable Categorized Time Metrics */}
+          <div className="avg-scroll-area">
+            {visibleGroups.map((group) => (
+              <div key={group.id} className="avg-group-block">
+                <div className="avg-group-title">
+                  <i className={group.icon} />
+                  <span>{group.label}</span>
+                </div>
+                <div
+                  className={`avg-cards-grid ${
+                    avgTab !== 'all' ? 'single-col' : ''
+                  }`}
+                >
+                  {group.computedItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className="avg-metric-tile"
+                      style={{ borderLeftColor: item.color }}
+                      title={item.candidates.join(' / ')}
+                    >
+                      <div className="avg-metric-top">
+                        <span className="avg-metric-name">{item.label}</span>
+                        <span className="avg-metric-badge">{item.code}</span>
+                      </div>
+                      <div
+                        className="avg-metric-val"
+                        style={{ color: item.color }}
+                      >
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="panel panel-no-margin" data-section="trend">
@@ -385,6 +748,18 @@ export default function Dashboard({ onToggleSidebar }) {
 
       <hr />
 
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        onDownload={() => void runExport()}
+        onCopy={() => void runExport()}
+        sections={EXPORT_SECTIONS}
+        selected={exportSectionsSelected}
+        onToggle={toggleExportSection}
+        mode={exportMode}
+        exporting={exporting}
+        message={exportMessage}
+      />
     </div>
   );
 }
@@ -398,18 +773,6 @@ function MetricCard({ label, value }) {
   );
 }
 
-function MiniMetric({ label, value }) {
-  return (
-    <div className="mini-metric-card">
-      <div className="mini-metric-label">{label}</div>
-      <div className="mini-metric-value">{value}</div>
-    </div>
-  );
-}
-
-// Export picker. Lets the user pick which sections of the dashboard
-// to capture, then either downloads the PNG or copies it to the
-// clipboard (for pasting into Canva, etc).
 function ExportModal({
   open,
   onClose,
@@ -431,10 +794,19 @@ function ExportModal({
       <div className="modal-card" style={{ maxWidth: 540 }}>
         <div className="modal-header">
           <h3 style={{ margin: 0 }}>
-            <i className={isCopy ? 'fa-regular fa-copy' : 'fa-solid fa-download'} />{' '}
+            <i
+              className={
+                isCopy ? 'fa-regular fa-copy' : 'fa-solid fa-download'
+              }
+            />{' '}
             {isCopy ? 'Copy to clipboard' : 'Download PNG'}
           </h3>
-          <button className="sidebar-close" type="button" onClick={onClose} aria-label="Close">
+          <button
+            className="sidebar-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <i className="fa-solid fa-xmark" />
           </button>
         </div>
@@ -448,7 +820,10 @@ function ExportModal({
           {sections.map((s) => {
             const checked = selected.has(s.id);
             return (
-              <label key={s.id} className={`export-tile ${checked ? 'checked' : ''}`}>
+              <label
+                key={s.id}
+                className={`export-tile ${checked ? 'checked' : ''}`}
+              >
                 <input
                   type="checkbox"
                   checked={checked}
@@ -463,21 +838,38 @@ function ExportModal({
 
         {message && (
           <div className={`export-message ${message.type}`}>
-            {message.type === 'info' && <span className="spinner" style={{ marginRight: 8 }} />}
+            {message.type === 'info' && (
+              <span className="spinner" style={{ marginRight: 8 }} />
+            )}
             {message.text}
           </div>
         )}
 
         <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" onClick={onClose} disabled={exporting}>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={onClose}
+            disabled={exporting}
+          >
             Cancel
           </button>
           {isCopy ? (
-            <button className="btn btn-primary" type="button" onClick={onCopy} disabled={exporting}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={onCopy}
+              disabled={exporting}
+            >
               <i className="fa-regular fa-copy" /> Copy as Image
             </button>
           ) : (
-            <button className="btn btn-primary" type="button" onClick={onDownload} disabled={exporting}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={onDownload}
+              disabled={exporting}
+            >
               <i className="fa-solid fa-download" /> Download PNG
             </button>
           )}

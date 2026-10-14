@@ -8,26 +8,14 @@ import Resource from './pages/Resource.jsx';
 import Report from './pages/Report.jsx';
 import Weather from './pages/Weather.jsx';
 import News from './pages/News.jsx';
+import CustomPage from './pages/CustomPage.jsx';
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  // Close mobile drawer automatically on route change
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
-
-  // Trigger Plotly resize when sidebar expands/collapses
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 280);
-    return () => clearTimeout(timer);
-  }, [collapsed]);
-
-  const handleToggleSidebar = () => {
+  const toggle = () => {
     if (window.innerWidth <= 1024) {
       setMobileOpen((o) => !o);
     } else {
@@ -35,13 +23,32 @@ export default function App() {
     }
   };
 
+  // Alias so either `toggle` or `handleToggleSidebar` works
+  const handleToggleSidebar = toggle;
+
+  // Close mobile sidebar when navigating between pages
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Reflect sidebar state on the app container and resize Plotly charts
+  useEffect(() => {
+    const el = document.querySelector('.app-container');
+    if (el) {
+      el.classList.toggle('sidebar-open', !collapsed);
+    }
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [collapsed]);
+
   return (
     <div
       className={`app-container ${collapsed ? 'sidebar-collapsed' : ''} ${
         mobileOpen ? 'sidebar-mobile-open' : ''
       }`}
     >
-      {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
           className="sidebar-backdrop"
@@ -54,29 +61,28 @@ export default function App() {
         mobileOpen={mobileOpen}
         onToggleCollapse={() => setCollapsed((c) => !c)}
         onCloseMobile={() => setMobileOpen(false)}
+        onClose={() => setCollapsed(true)}
       />
 
       <main className="main-content">
         <Routes>
-          <Route
-            path="/"
-            element={<Dashboard onToggleSidebar={handleToggleSidebar} />}
-          />
+          <Route path="/" element={<Dashboard onToggleSidebar={toggle} />} />
           <Route
             path="/resource"
-            element={<Resource onToggleSidebar={handleToggleSidebar} />}
+            element={<Resource onToggleSidebar={toggle} />}
           />
           <Route
             path="/report"
-            element={<Report onToggleSidebar={handleToggleSidebar} />}
+            element={<Report onToggleSidebar={toggle} />}
           />
           <Route
             path="/weather"
-            element={<Weather onToggleSidebar={handleToggleSidebar} />}
+            element={<Weather onToggleSidebar={toggle} />}
           />
+          <Route path="/news" element={<News onToggleSidebar={toggle} />} />
           <Route
-            path="/news"
-            element={<News onToggleSidebar={handleToggleSidebar} />}
+            path="/custom"
+            element={<CustomPage onToggleSidebar={toggle} />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
