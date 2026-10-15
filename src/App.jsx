@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 import Sidebar from './components/Sidebar.jsx';
-import ZapierChat from './components/ZapierChat.jsx';
+
 import Dashboard from './pages/Dashboard.jsx';
 import Resource from './pages/Resource.jsx';
 import Report from './pages/Report.jsx';
@@ -88,7 +88,7 @@ export default function App() {
         </Routes>
       </main>
 
-      <ZapierChat />
+
     </div>
   );
 }

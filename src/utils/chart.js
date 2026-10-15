@@ -49,7 +49,7 @@ export function renderTrendChart(elementId, data) {
   if (points.length === 0) {
     if (window.Plotly) window.Plotly.purge(elementId);
     el.innerHTML =
-      "<div style='display:flex; align-items:center; justify-content:center; height:100%; color:#64748b; font-weight:500;'>No timeline data available for these filters.</div>";
+      "<div style='display:flex; align-items:center; justify-content:center; height:100%; color:#64748b; font-weight:500;'>.</div>";
     return;
   }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
-import { applyDashboardFilters } from '../utils/filters.js';
+import { applyDashboardFilters, P1_REGEX, P2_REGEX } from '../utils/filters.js';
 import { getAverageTime } from '../utils/time.js';
 import {
   computeMetrics,
@@ -27,24 +27,32 @@ const EXPORT_SECTIONS = [
   { id: 'trend', label: 'Turn-Around Time Trend', icon: 'fa-solid fa-chart-line' },
 ];
 
-// All 17 time columns calculated directly via getAverageTime(filtered, column)
-const ALL_17_TIME_COLUMNS = [
-  { label: 'Dispatch Time', column: 'DISPATCH TIME' },
-  { label: 'Run Time', column: 'RUN TIME' },
-  { label: 'Scene Time', column: 'SCENE TIME' },
-  { label: 'En Route to Higher Facility', column: 'EN ROUTE TO HIGHER FACILITY' },
-  { label: 'Arrival to Higher Facility', column: 'ARRIVAL TO HIGHER FACILITY' },
-  { label: 'Endorsement Time', column: 'ENDORSEMENT TIME' },
-  { label: 'Arrival at Base Time', column: 'ARRIVAL AT BASE TIME' },
-  { label: 'Computed Dispatch Time (N-E)', column: 'COMPUTED DISPATCH TIME (N-E)' },
-  { label: 'Computed Run Time (O-N)', column: 'COMPUTED RUN TIME (O-N)' },
+// Only the 10 Computed & Averaged time columns requested
+const AVERAGE_TIME_COLUMNS = [
+  {
+    label: 'Computed Dispatch Time (N-E)',
+    column: 'COMPUTED DISPATCH TIME (N-E)',
+  },
+  {
+    label: 'Computed Run Time (O-N)',
+    column: 'COMPUTED RUN TIME (O-N)',
+  },
   {
     label: 'Computed Response Mobilization Time (P-O)',
     column: 'COMPUTED RESPONSE MOBILIZATION TIME (P-O)',
   },
-  { label: 'Computed Response Time (P-E)', column: 'COMPUTED RESPONSE TIME (P-E)' },
-  { label: 'Computed Scene Time (Q-P)', column: 'COMPUTED SCENE TIME (Q-P)' },
-  { label: 'Computed Transport Time (R-Q)', column: 'COMPUTED TRANSPORT TIME (R-Q)' },
+  {
+    label: 'Computed Response Time (P-E)',
+    column: 'COMPUTED RESPONSE TIME (P-E)',
+  },
+  {
+    label: 'Computed Scene Time (Q-P)',
+    column: 'COMPUTED SCENE TIME (Q-P)',
+  },
+  {
+    label: 'Computed Transport Time (R-Q)',
+    column: 'COMPUTED TRANSPORT TIME (R-Q)',
+  },
   {
     label: 'Averaged Arrival to Facility Time',
     column: 'AVERAGED ARRIVAL TO FACILITY TIME',
@@ -62,6 +70,47 @@ const ALL_17_TIME_COLUMNS = [
     column: 'AVERAGED TURN AROUND TIME (T-E)',
   },
 ];
+
+// Matches "Trauma (Health Related Emergency)" and "Medical (Health Related Emergency)"
+// while tolerating extra internal spaces in the Google Sheet.
+const TRAUMA_MEDICAL_REGEX =
+  /^(trauma|medical)\s*\(\s*health\s*related\s*emergency\s*\)$/i;
+
+// Realistic Average Time Filter:
+// - If a row is Priority 1: INCIDENT TYPE must be Trauma or Medical only.
+// - If a row is Priority 2: All valid Priority 2 incident types are included.
+// - Because `filtered` already respects the top Priority dropdown ('All', 'Priority 1', 'Priority 2'),
+//   selecting Priority 1 shows P1 (Trauma & Medical), selecting Priority 2 shows P2, and 'All' combines both.
+function isRealisticAvgTimeRow(row) {
+  const rawType = (row['INCIDENT TYPE'] || '').replace(/\s+/g, ' ').trim();
+  const rawPriority = (row['PRIORITY DISPATCH'] || '').trim();
+
+  const isPriority1 = P1_REGEX
+    ? P1_REGEX.test(rawPriority)
+    : /priority\s*1|\bp1\b/i.test(rawPriority);
+
+  const isPriority2 = P2_REGEX
+    ? P2_REGEX.test(rawPriority)
+    : /priority\s*2|\bp2\b/i.test(rawPriority);
+
+  if (isPriority1) {
+    return (
+      TRAUMA_MEDICAL_REGEX.test(rawType) ||
+      rawType.toLowerCase().startsWith('trauma') ||
+      rawType.toLowerCase().startsWith('medical')
+    );
+  }
+
+  if (isPriority2) {
+    // Exclude disregarded/prank/N/A calls if any exist under P2
+    return (
+      rawType !== '' &&
+      !/^(n\/a|none|disregarded|prank)/i.test(rawType)
+    );
+  }
+
+  return false;
+}
 
 export default function Dashboard({ onToggleSidebar }) {
   const [rawData, setRawData] = useState([]);
@@ -191,19 +240,42 @@ export default function Dashboard({ onToggleSidebar }) {
 
   const metrics = useMemo(() => computeMetrics(filtered), [filtered]);
 
-  // Directly compute the average time for all 17 columns using getAverageTime
+  // Filter rows for realistic Average Times based on the active Priority selection:
+  // - Priority 1 rows only include Trauma & Medical
+  // - Priority 2 rows include valid Priority 2 dispatches
+  const avgTimesFiltered = useMemo(
+    () => filtered.filter(isRealisticAvgTimeRow),
+    [filtered]
+  );
+
+  // Compute the average time for the 10 Computed & Averaged columns
   const averageTimesList = useMemo(() => {
-    return ALL_17_TIME_COLUMNS.map((item) => ({
+    return AVERAGE_TIME_COLUMNS.map((item) => ({
       ...item,
-      value: loading ? '…' : getAverageTime(filtered, item.column),
+      value: loading ? '…' : getAverageTime(avgTimesFiltered, item.column),
     }));
-  }, [filtered, loading]);
+  }, [avgTimesFiltered, loading]);
+
+  // Dynamic badge & subtitle reflecting whether Priority 1, Priority 2, or All is selected
+  const avgFilterBadge =
+    priority === 'Priority 1'
+      ? `P1 • Trauma & Medical (${avgTimesFiltered.length})`
+      : priority === 'Priority 2'
+      ? `Priority 2 (${avgTimesFiltered.length})`
+      : `P1 (Trauma/Med) & P2 (${avgTimesFiltered.length})`;
+
+  const avgFilterSubtitle =
+    priority === 'Priority 1'
+      ? 'Priority 1 — Trauma & Medical (Health Related Emergency) only'
+      : priority === 'Priority 2'
+      ? 'Showing Priority 2 dispatches'
+      : 'P1 (Trauma & Medical only) + Priority 2 dispatches';
 
   // --- Charts (re-render whenever filtered data changes) --------------
   useEffect(() => {
     if (loading) return;
-    renderTrendChart('chartDiv', filtered);
-  }, [filtered, loading]);
+    renderTrendChart('chartDiv', avgTimesFiltered);
+  }, [avgTimesFiltered, loading]);
 
   useEffect(() => {
     if (loading) return;
@@ -277,7 +349,7 @@ export default function Dashboard({ onToggleSidebar }) {
 
   return (
     <div className="container">
-      {/* Clean 2-column scrollable grid for all 17 Average Time cards */}
+      {/* Clean 2-column scrollable grid for the 10 Average Time cards */}
       <style>{`
         .avg-all-panel {
           display: flex;
@@ -288,13 +360,21 @@ export default function Dashboard({ onToggleSidebar }) {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 12px;
+          gap: 8px;
+          margin-bottom: 4px;
+        }
+        .avg-filter-note {
+          font-size: 0.72rem;
+          color: #64748b;
+          margin-bottom: 10px;
+          font-weight: 500;
         }
         .avg-all-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 10px;
           overflow-y: auto;
+          padding-top: 2px;
           padding-right: 4px;
         }
         .avg-all-grid::-webkit-scrollbar {
@@ -450,10 +530,11 @@ export default function Dashboard({ onToggleSidebar }) {
         >
           <div className="avg-all-header">
             <h3 style={{ margin: 0 }}>Average Times</h3>
-            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>
-              {averageTimesList.length} Columns
+            <span style={{ fontSize: '0.73rem', color: '#2563eb', fontWeight: 700 }}>
+              {avgFilterBadge}
             </span>
           </div>
+          <div className="avg-filter-note">{avgFilterSubtitle}</div>
 
           <div className="avg-all-grid">
             {averageTimesList.map((item) => (
