@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
+import { SkeletonCard } from '../components/Skeletons.jsx';
 
 const FB_PAGE_ID = '1424151444262464';
 const FB_ACCESS_TOKEN =
@@ -519,9 +520,10 @@ export default function News({ onToggleSidebar }) {
 
       <div className="news-editorial-wrapper">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 50, color: '#64748b' }}>
-            <i className="fa-solid fa-circle-notch fa-spin" style={{ marginRight: 8 }} />
-            Fetching live posts from Facebook...
+          <div className="news-loading-grid" role="status" aria-label="Loading news posts">
+            {Array.from({ length: 4 }, (_, index) => (
+              <SkeletonCard key={index} variant="panel" />
+            ))}
           </div>
         ) : error ? (
           <div

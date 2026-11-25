@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
+import PatientAnalytics from '../components/PatientAnalytics.jsx';
+import { SkeletonNotice } from '../components/Skeletons.jsx';
+import { fetchIncidentRows, getResourceTeam } from '../data/incidents.js';
 import { applyDashboardFilters, P1_REGEX, P2_REGEX } from '../utils/filters.js';
-import { getAverageTime } from '../utils/time.js';
+import { getAverageElapsedTime } from '../utils/time.js';
 import {
   computeMetrics,
   renderMap,
@@ -13,9 +16,6 @@ import {
 import { useFlatpickr } from '../utils/hooks.js';
 import { exportSections, triggerDownload } from '../utils/exportImage.js';
 
-const SHEET_ID = '189IMJxmVEHD033kCJrprM_7CcdOg7QTTra8D9dy-Dv8';
-const GID = '1297922850';
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
 const GEOJSON_URL = `${import.meta.env.BASE_URL}data/Boundary.json`;
 
 // Section registry used by the export modal.
@@ -27,47 +27,56 @@ const EXPORT_SECTIONS = [
   { id: 'trend', label: 'Turn-Around Time Trend', icon: 'fa-solid fa-chart-line' },
 ];
 
-// Only the 10 Computed & Averaged time columns requested
 const AVERAGE_TIME_COLUMNS = [
   {
-    label: 'Computed Dispatch Time (N-E)',
-    column: 'COMPUTED DISPATCH TIME (N-E)',
+    label: 'Notification to Dispatch',
+    start: 'Notification Time',
+    end: 'Dispatch Time',
   },
   {
-    label: 'Computed Run Time (O-N)',
-    column: 'COMPUTED RUN TIME (O-N)',
+    label: 'Dispatch to Run',
+    start: 'Dispatch Time',
+    end: 'Run Time',
   },
   {
-    label: 'Computed Response Mobilization Time (P-O)',
-    column: 'COMPUTED RESPONSE MOBILIZATION TIME (P-O)',
+    label: 'Run to Scene',
+    start: 'Run Time',
+    end: 'Scene Time',
   },
   {
-    label: 'Computed Response Time (P-E)',
-    column: 'COMPUTED RESPONSE TIME (P-E)',
+    label: 'Scene to Facility Enroute',
+    start: 'Scene Time',
+    end: 'Enroute To Facility',
   },
   {
-    label: 'Computed Scene Time (Q-P)',
-    column: 'COMPUTED SCENE TIME (Q-P)',
+    label: 'Facility Transport',
+    start: 'Enroute To Facility',
+    end: 'Arrival to Facility',
   },
   {
-    label: 'Computed Transport Time (R-Q)',
-    column: 'COMPUTED TRANSPORT TIME (R-Q)',
+    label: 'Facility Endorsement',
+    start: 'Arrival to Facility',
+    end: 'Time of Endorsement',
   },
   {
-    label: 'Averaged Arrival to Facility Time',
-    column: 'AVERAGED ARRIVAL TO FACILITY TIME',
+    label: 'Endorsement to Return',
+    start: 'Time of Endorsement',
+    end: 'Proceeding Back to Base',
   },
   {
-    label: 'Averaged Endorsement Time (S-R)',
-    column: 'AVERAGED ENDORSEMENT TIME (S-R)',
+    label: 'Return to Base',
+    start: 'Proceeding Back to Base',
+    end: 'Arrival to Base',
   },
   {
-    label: 'Averaged Arrival at Base Time (T-S)',
-    column: 'AVERAGED ARRIVAL AT BASE TIME (T-S)',
+    label: 'Notification to Facility',
+    start: 'Notification Time',
+    end: 'Arrival to Facility',
   },
   {
-    label: 'Averaged Turn Around Time (T-E)',
-    column: 'AVERAGED TURN AROUND TIME (T-E)',
+    label: 'Notification to Base',
+    start: 'Notification Time',
+    end: 'Arrival to Base',
   },
 ];
 
@@ -77,13 +86,13 @@ const TRAUMA_MEDICAL_REGEX =
   /^(trauma|medical)\s*\(\s*health\s*related\s*emergency\s*\)$/i;
 
 // Realistic Average Time Filter:
-// - If a row is Priority 1: INCIDENT TYPE must be Trauma or Medical only.
+// - If a row is Priority 1: Type of Incident must be Trauma or Medical only.
 // - If a row is Priority 2: All valid Priority 2 incident types are included.
 // - Because `filtered` already respects the top Priority dropdown ('All', 'Priority 1', 'Priority 2'),
 //   selecting Priority 1 shows P1 (Trauma & Medical), selecting Priority 2 shows P2, and 'All' combines both.
 function isRealisticAvgTimeRow(row) {
-  const rawType = (row['INCIDENT TYPE'] || '').replace(/\s+/g, ' ').trim();
-  const rawPriority = (row['PRIORITY DISPATCH'] || '').trim();
+  const rawType = (row['Type of Incident'] || '').replace(/\s+/g, ' ').trim();
+  const rawPriority = (row['Priority'] || '').trim();
 
   const isPriority1 = P1_REGEX
     ? P1_REGEX.test(rawPriority)
@@ -114,6 +123,7 @@ function isRealisticAvgTimeRow(row) {
 
 export default function Dashboard({ onToggleSidebar }) {
   const [rawData, setRawData] = useState([]);
+  const [activeTab, setActiveTab] = useState('metrics');
   const [geoJson, setGeoJson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -144,24 +154,11 @@ export default function Dashboard({ onToggleSidebar }) {
     async function init() {
       try {
         const [csvData, rawMap] = await Promise.all([
-          window.d3.csv(CSV_URL),
+          fetchIncidentRows(),
           window.d3.json(GEOJSON_URL).catch(() => null),
         ]);
 
         if (cancelled) return;
-
-        // Strip hidden Alt+Enter from headers
-        const cleaned = csvData.map((row) => {
-          const out = {};
-          Object.keys(row).forEach((k) => {
-            const cleanKey = k
-              .replace(/[\r\n]+/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            out[cleanKey] = row[k];
-          });
-          return out;
-        });
 
         let geo = null;
         if (rawMap) {
@@ -173,7 +170,7 @@ export default function Dashboard({ onToggleSidebar }) {
           }
         }
 
-        setRawData(cleaned);
+        setRawData(csvData);
         setGeoJson(geo);
         setLoading(false);
       } catch (err) {
@@ -195,7 +192,7 @@ export default function Dashboard({ onToggleSidebar }) {
   const teams = useMemo(() => {
     const set = new Set();
     rawData.forEach((row) => {
-      const t = row['RESOURCE TEAM'];
+      const t = getResourceTeam(row);
       if (t && t.trim() !== '') set.add(t.trim());
     });
     return [...set].sort();
@@ -248,11 +245,13 @@ export default function Dashboard({ onToggleSidebar }) {
     [filtered]
   );
 
-  // Compute the average time for the 10 Computed & Averaged columns
+  // Compute average durations from the operational event timestamps.
   const averageTimesList = useMemo(() => {
     return AVERAGE_TIME_COLUMNS.map((item) => ({
       ...item,
-      value: loading ? '…' : getAverageTime(avgTimesFiltered, item.column),
+      value: loading
+        ? '…'
+        : getAverageElapsedTime(avgTimesFiltered, item.start, item.end),
     }));
   }, [avgTimesFiltered, loading]);
 
@@ -273,24 +272,24 @@ export default function Dashboard({ onToggleSidebar }) {
 
   // --- Charts (re-render whenever filtered data changes) --------------
   useEffect(() => {
-    if (loading) return;
+    if (loading || activeTab !== 'metrics') return;
     renderTrendChart('chartDiv', avgTimesFiltered);
-  }, [avgTimesFiltered, loading]);
+  }, [avgTimesFiltered, loading, activeTab]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || activeTab !== 'metrics') return;
     renderMap('mapDiv', filtered, geoJson);
-  }, [filtered, geoJson, loading]);
+  }, [filtered, geoJson, loading, activeTab]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || activeTab !== 'metrics') return;
     renderRadiusChart('radiusChartDiv', filtered);
-  }, [filtered, loading]);
+  }, [filtered, loading, activeTab]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || activeTab !== 'metrics') return;
     renderTypeChart('typeChartDiv', filtered);
-  }, [filtered, loading]);
+  }, [filtered, loading, activeTab]);
 
   // --- Export (download / copy) ---------------------------------------
   const toggleExportSection = (id) => {
@@ -392,10 +391,40 @@ export default function Dashboard({ onToggleSidebar }) {
       `}</style>
 
       <PageHeader
-        title="Live Key Metrics"
+        title={activeTab === 'metrics' ? 'Live Key Metrics' : 'Patient Analytics'}
         onToggleSidebar={onToggleSidebar}
       />
 
+      <div className="dashboard-tabs" role="tablist" aria-label="Dashboard views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'metrics'}
+          className={activeTab === 'metrics' ? 'active' : ''}
+          onClick={() => setActiveTab('metrics')}
+        >
+          <i className="fa-solid fa-chart-simple" aria-hidden="true" /> Metrics
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'patient'}
+          className={activeTab === 'patient' ? 'active' : ''}
+          onClick={() => setActiveTab('patient')}
+        >
+          <i className="fa-solid fa-hospital-user" aria-hidden="true" /> Patient
+        </button>
+      </div>
+
+      {error && (
+        <div className="panel" style={{ color: '#dc3545' }}>
+          Failed to load dashboard data: {error.message}
+        </div>
+      )}
+
+      <div key={activeTab} className="dashboard-tab-content">
+        {activeTab === 'metrics' ? (
+        <>
       <div className="filter-bar" data-section="filters">
         <div className="filter-card">
           <label htmlFor="filter-priority" className="filter-card-label">
@@ -448,47 +477,33 @@ export default function Dashboard({ onToggleSidebar }) {
         </div>
       </div>
 
-      {error && (
-        <div className="panel" style={{ color: '#dc3545' }}>
-          Failed to load dashboard data.
-        </div>
-      )}
-
-      {loading && (
-        <div
-          className="panel"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            color: '#475569',
-          }}
-        >
-          <span className="spinner" />
-          <span>Loading live metrics...</span>
-        </div>
-      )}
+      {loading && <SkeletonNotice>Loading live metrics</SkeletonNotice>}
 
       <div className="metrics-grid" data-section="metrics">
         <MetricCard
           label="Total Incident"
           value={loading ? '…' : metrics.total.toLocaleString()}
+          loading={loading}
         />
         <MetricCard
           label="Incident Calls"
           value={loading ? '…' : metrics.incident.toLocaleString()}
+          loading={loading}
         />
         <MetricCard
           label="Priority 1 "
           value={loading ? '…' : metrics.p1.toLocaleString()}
+          loading={loading}
         />
         <MetricCard
           label="Priority 2 "
           value={loading ? '…' : metrics.p2.toLocaleString()}
+          loading={loading}
         />
         <MetricCard
           label="Disregarded / N/A"
           value={loading ? '…' : metrics.disregarded.toLocaleString()}
+          loading={loading}
         />
       </div>
 
@@ -497,12 +512,16 @@ export default function Dashboard({ onToggleSidebar }) {
       <div className="layout-75-25" data-section="map-and-donuts">
         <div className="panel panel-no-margin" data-section="heatmap">
           <h3>Butuan City Incident Heat Map</h3>
-          <div id="mapDiv" />
+          <div id="mapDiv">
+            {loading && <span className="soft-skeleton-line soft-skeleton-chart" />}
+          </div>
         </div>
 
         <div className="panel stacked-charts-panel" data-section="donuts">
           <h3 className="chart-subtitle">KM Radius Distribution</h3>
-          <div id="radiusChartDiv" />
+          <div id="radiusChartDiv">
+            {loading && <span className="soft-skeleton-line soft-skeleton-chart" />}
+          </div>
           <hr className="chart-divider" />
           <h3 className="chart-subtitle">Incident Types</h3>
           <div
@@ -516,7 +535,9 @@ export default function Dashboard({ onToggleSidebar }) {
             <div
               id="typeChartDiv"
               style={{ flex: 1, minHeight: 0, width: '100%' }}
-            />
+            >
+              {loading && <span className="soft-skeleton-line soft-skeleton-chart" />}
+            </div>
           </div>
         </div>
       </div>
@@ -539,17 +560,20 @@ export default function Dashboard({ onToggleSidebar }) {
           <div className="avg-all-grid">
             {averageTimesList.map((item) => (
               <MiniMetric
-                key={item.column}
+                key={`${item.start}-${item.end}`}
                 label={item.label}
                 value={item.value}
+                loading={loading}
               />
             ))}
           </div>
         </div>
 
         <div className="panel panel-no-margin" data-section="trend">
-          <h3>Turn Around Time Trend</h3>
-          <div id="chartDiv" />
+          <h3>Notification-to-Facility Response Trend</h3>
+          <div id="chartDiv">
+            {loading && <span className="soft-skeleton-line soft-skeleton-chart" />}
+          </div>
         </div>
       </div>
 
@@ -567,27 +591,34 @@ export default function Dashboard({ onToggleSidebar }) {
         exporting={exporting}
         message={exportMessage}
       />
+        </>
+      ) : (
+          <PatientAnalytics incidentRows={rawData} loading={loading} />
+        )}
+      </div>
     </div>
   );
 }
 
-function MetricCard({ label, value }) {
+function MetricCard({ label, value, loading }) {
   return (
     <div className="metric-card">
       <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
+      <div className="metric-value">
+        {loading ? <span className="soft-skeleton-line soft-skeleton-value" /> : value}
+      </div>
     </div>
   );
 }
 
-function MiniMetric({ label, value }) {
+function MiniMetric({ label, value, loading }) {
   return (
     <div className="mini-metric-card">
       <div className="mini-metric-label" style={{ fontSize: '0.75rem', lineHeight: 1.3 }}>
         {label}
       </div>
       <div className="mini-metric-value" style={{ fontSize: '1.15rem' }}>
-        {value}
+        {loading ? <span className="soft-skeleton-line soft-skeleton-value" /> : value}
       </div>
     </div>
   );

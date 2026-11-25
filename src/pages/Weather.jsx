@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SkeletonCard, SkeletonNotice } from "../components/Skeletons.jsx";
 
 const WEATHER_API_URL =
   "https://api.openweathermap.org/data/2.5/weather?lat=8.9515&lon=125.5277&appid=969ca531fbd4c3fb820d95765b142485&units=metric";
@@ -26,15 +27,23 @@ function formatDaylight(sunrise, sunset) {
 export default function Weather({ onToggleSidebar }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [syncedAt, setSyncedAt] = useState(
     "Syncing live meteorological data...",
   );
 
   async function fetchWeather() {
+    setRefreshing(true);
     setSyncedAt("Syncing live meteorological data...");
     try {
       const curRes = await fetch(WEATHER_API_URL);
+      if (!curRes.ok) {
+        throw new Error(`Weather request failed (${curRes.status}).`);
+      }
       const json = await curRes.json();
+      if (json.cod && Number(json.cod) !== 200) {
+        throw new Error(json.message || "Weather service returned an error.");
+      }
       setData(json);
       setError(null);
 
@@ -52,6 +61,8 @@ export default function Weather({ onToggleSidebar }) {
       console.error("Failed to fetch weather data:", err);
       setError(err);
       setSyncedAt("System Offline: Unable to reach servers.");
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -422,10 +433,20 @@ export default function Weather({ onToggleSidebar }) {
           id="btn-refresh"
           className="btn btn-primary"
           onClick={fetchWeather}
+          disabled={refreshing}
         >
-          <i className="fa-solid fa-rotate-right" /> Refresh Data
+          <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} />{" "}
+          {refreshing ? "Refreshing…" : "Refresh Data"}
         </button>
       </div>
+
+      {refreshing && data && <SkeletonNotice>Refreshing weather data</SkeletonNotice>}
+      {error && (
+        <div className="weather-error-note" role="status">
+          Latest weather update failed: {error.message}
+          {data && " Showing the last available reading."}
+        </div>
+      )}
 
       <div className="weather-grid">
         <div className="weather-map-panel">
@@ -452,7 +473,9 @@ export default function Weather({ onToggleSidebar }) {
           </div>
         </div>
 
-        {/* Hero Weather Card */}
+        {!data && !error ? (
+          <SkeletonCard variant="panel" />
+        ) : (
         <div className="card wx-hero-card">
           <div className="wx-hero-header">
             <div>
@@ -515,8 +538,11 @@ export default function Weather({ onToggleSidebar }) {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Solar Cycle Card */}
+        {!data && !error ? (
+          <SkeletonCard variant="panel" />
+        ) : (
         <div className="card wx-solar-card">
           <div className="wx-solar-header">
             <h3>
@@ -568,8 +594,13 @@ export default function Weather({ onToggleSidebar }) {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Atmospheric Conditions Card */}
+        {!data && !error ? (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <SkeletonCard variant="panel" />
+          </div>
+        ) : (
         <div className="card" style={{ gridColumn: "1 / -1" }}>
           <h3 style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             <i className="fa-solid fa-wind" style={{ color: "#0284c7" }} />
@@ -628,6 +659,7 @@ export default function Weather({ onToggleSidebar }) {
             />
           </div>
         </div>
+        )}
       </div>
     </div>
   );

@@ -65,27 +65,29 @@ export default function App() {
       />
 
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Dashboard onToggleSidebar={toggle} />} />
-          <Route
-            path="/resource"
-            element={<Resource onToggleSidebar={toggle} />}
-          />
-          <Route
-            path="/report"
-            element={<Report onToggleSidebar={toggle} />}
-          />
-          <Route
-            path="/weather"
-            element={<Weather onToggleSidebar={toggle} />}
-          />
-          <Route path="/news" element={<News onToggleSidebar={toggle} />} />
-          <Route
-            path="/custom"
-            element={<CustomPage onToggleSidebar={toggle} />}
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div className="route-transition" key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<Dashboard onToggleSidebar={toggle} />} />
+            <Route
+              path="/resource"
+              element={<Resource onToggleSidebar={toggle} />}
+            />
+            <Route
+              path="/report"
+              element={<Report onToggleSidebar={toggle} />}
+            />
+            <Route
+              path="/weather"
+              element={<Weather onToggleSidebar={toggle} />}
+            />
+            <Route path="/news" element={<News onToggleSidebar={toggle} />} />
+            <Route
+              path="/custom"
+              element={<CustomPage onToggleSidebar={toggle} />}
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
       </main>
 
 

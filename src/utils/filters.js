@@ -2,9 +2,12 @@
 // the dashboard's filter dropdown and the breakdown counts. Kept in one
 // place so a typo can't drift between the two.
 
-export const P1_REGEX = /Priority 1|ABC|Cardiac Arrest|DOB|Motor Vehicular Accident|MVA/i;
-export const P2_REGEX = /Priority 2/i;
-export const DISREGARDED_REGEX = /Not Applicable|Disregarded/i;
+import { parseIncidentDate } from './time.js';
+import { getResourceTeam } from '../data/incidents.js';
+
+export const P1_REGEX = /Priority\s*1|\bP1\b|ABC|Cardiac Arrest|DOB|Motor Vehicular Accident|MVA/i;
+export const P2_REGEX = /Priority\s*2|\bP2\b/i;
+export const DISREGARDED_REGEX = /Not Applicable|Disregarded|^N\/?A$/i;
 
 // Parses a flatpickr "Y-m-d" or "Y-m-d to Y-m-d" string into a predicate
 // that compares against a JS Date's year/month/day.
@@ -22,9 +25,8 @@ export function makeDatePredicate(dateVal) {
     : startMs;
 
   return (row) => {
-    if (!row['TIMESTAMP']) return false;
-    const d = new Date(row['TIMESTAMP']);
-    if (Number.isNaN(d.getTime())) return false;
+    const d = parseIncidentDate(row['Date']) || parseIncidentDate(row['Timestamp']);
+    if (!d) return false;
     const rowMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     return rowMs >= startMs && rowMs <= endMs;
   };
@@ -37,13 +39,13 @@ export function applyDashboardFilters(rows, { priority, teams, dateVal }) {
   const datePredicate = makeDatePredicate(dateVal);
 
   return rows.filter((row) => {
-    const dispatch = row['PRIORITY DISPATCH'] || '';
+    const dispatch = row['Priority'] || '';
 
     let matchPrio = true;
     if (priority === 'Priority 1') matchPrio = P1_REGEX.test(dispatch);
     else if (priority === 'Priority 2') matchPrio = P2_REGEX.test(dispatch);
 
-    const teamName = row['RESOURCE TEAM']?.trim();
+    const teamName = getResourceTeam(row);
     const matchTeam =
       isAllTeams || (teamName && teams.includes(teamName));
 

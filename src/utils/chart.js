@@ -3,7 +3,7 @@
 // no `react-plotly.js` needed, which keeps the bundle small and the
 // output visually identical to Draft - 2.
 
-import { timeToSeconds } from './time.js';
+import { getElapsedSeconds, parseIncidentDate } from './time.js';
 import { P1_REGEX, P2_REGEX, DISREGARDED_REGEX } from './filters.js';
 
 // --- Metric counters -----------------------------------------------------
@@ -14,7 +14,7 @@ export function computeMetrics(data) {
   let disregarded = 0;
 
   data.forEach((row) => {
-    const dispatch = row['PRIORITY DISPATCH'] || '';
+    const dispatch = row['Priority'] || '';
     if (P1_REGEX.test(dispatch)) p1 += 1;
     if (P2_REGEX.test(dispatch)) p2 += 1;
     if (DISREGARDED_REGEX.test(dispatch)) disregarded += 1;
@@ -37,9 +37,13 @@ export function renderTrendChart(elementId, data) {
 
   const points = data
     .map((row) => {
-      const secs = timeToSeconds(row['AVERAGED TURN AROUND TIME (T-E)']);
+      const secs = getElapsedSeconds(
+        row,
+        'Notification Time',
+        'Arrival to Facility'
+      );
       return {
-        x: row['TIMESTAMP'] ? new Date(row['TIMESTAMP']) : null,
+        x: parseIncidentDate(row['Date']) || parseIncidentDate(row['Timestamp']),
         y: secs !== null ? secs / 60 : null,
       };
     })
@@ -61,7 +65,7 @@ export function renderTrendChart(elementId, data) {
     fill: 'tozeroy',
     fillcolor: 'rgba(37, 99, 235, 0.12)',
     line: { shape: 'spline', smoothing: 1.2, color: '#2563eb', width: 3 },
-    name: 'Turn Around',
+    name: 'Notification to Facility',
     hovertemplate:
       '<b>%{y:.1f} mins</b><br>%{x|%b %d, %I:%M %p}<extra></extra>',
   };
@@ -73,7 +77,7 @@ export function renderTrendChart(elementId, data) {
     font: { family: 'inherit', color: '#64748b' },
     hovermode: 'x unified',
     yaxis: {
-      title: 'Minutes',
+      title: 'Minutes to Facility',
       gridcolor: '#e2e8f0',
       zerolinecolor: '#cbd5e1',
       zerolinewidth: 2,
@@ -95,8 +99,8 @@ export function renderMap(elementId, data, geoJson) {
 
   const counts = {};
   data.forEach((row) => {
-    if (row['BARANGAY']) {
-      let bg = row['BARANGAY'].toUpperCase().trim();
+    if (row['Barangay']) {
+      let bg = row['Barangay'].toUpperCase().trim();
       bg = bg.replace(/\s*POBLACION\s*\(BARANGAY\s*\d+.*?\)\s*/g, '');
       bg = bg.replace('PORT POYOHON', 'FORT POYOHON');
       bg = bg.replace('JOSE RIZAL', 'J.P. RIZAL');
@@ -160,8 +164,8 @@ function tally(rows, column) {
   const out = {};
   rows.forEach((row) => {
     const v = row[column];
-    if (v && v.trim() !== '') {
-      const k = v.trim();
+    if (v !== null && v !== undefined && String(v).trim() !== '') {
+      const k = String(v).trim();
       out[k] = (out[k] || 0) + 1;
     }
   });
@@ -175,7 +179,7 @@ export function renderRadiusChart(elementId, data) {
   const el = document.getElementById(elementId);
   if (!el) return;
 
-  const counts = tally(data, 'KM RADIUS');
+  const counts = tally(data, 'KM Radius');
   const keys = Object.keys(counts);
   if (keys.length === 0) {
     if (window.Plotly) window.Plotly.purge(elementId);
@@ -222,7 +226,7 @@ export function renderTypeChart(elementId, data) {
   const el = document.getElementById(elementId);
   if (!el) return;
 
-  const counts = tally(data, 'INCIDENT TYPE');
+  const counts = tally(data, 'Type of Incident');
   const keys = Object.keys(counts);
   if (keys.length === 0) {
     if (window.Plotly) window.Plotly.purge(elementId);

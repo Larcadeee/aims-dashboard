@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
+import { SkeletonTable } from '../components/Skeletons.jsx';
+import { fetchIncidentRows, INCIDENT_COLUMNS } from '../data/incidents.js';
 import { useFlatpickr } from '../utils/hooks.js';
+import { parseIncidentDate } from '../utils/time.js';
 
 // Default personnel: same names as the original print template, but
 // these will be edited in a modal right before printing.
@@ -29,40 +32,69 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-const ELOG_SHEET_ID = '1AtMv03PDmXNgj9IkQVXX8iZjjEMduzHKRk4fY_8DN1A';
-const ELOG_GID = '0';
-const ELOG_CSV_URL = `https://docs.google.com/spreadsheets/d/${ELOG_SHEET_ID}/export?format=csv&gid=${ELOG_GID}`;
+function compareIncidentValues(left, right, column) {
+  const leftText = String(left ?? '').trim();
+  const rightText = String(right ?? '').trim();
+  if (!leftText || !rightText) {
+    return leftText ? -1 : rightText ? 1 : 0;
+  }
 
-const ORDERED_HEADERS = [
-  'DATE', 'INCIDENT ID', 'CALL STATUS', 'NOTIFICATON TIME', 'DISPATCH TIME',
-  'TYPE OF CALL', '# OF PATIENTS/# OF PERSONNEL ONBOARD', 'LOCATION/DESTINATION',
-  'SPECIFIC LOCATION/ LAND MARK', 'NATURE OF ILLNESS/MOI', 'NATURE OF CALL',
-  'REMARKS', 'ACTIONS TAKEN', 'FACILATED BY (Name of Agency)', 'RESPONSE UNIT',
-  'BASE', 'ADDITIONAL RESOURCES', 'TRANSPORTED TO', 'RESPONSE TEAM',
-  'RESPONSE TEAM LEADER/PILOT', 'DISPATCHER/EWSETC/EWS', 'SUPERVISOR',
-  'FOR BRIEFER', 'CALLER', 'CONTACT NUMBER', 'PROCEEDING TO AREA',
-  'ARRIVE AT SCENE/ DESTINATION', 'PROCEEDING TO HOS/RES.', 'ARRIVAL AT HOS/RES.',
-  'ENDORSED', 'PROCEEDING TO BASE', 'OUTSIDE BASE DISPATCH', 'ARRIVE AT BASE',
-  'BRIEFER SENT TO HOO AND SUPERVISOR (TIME)', 'MONTH',
-];
+  if (column === 'Date' || column === 'Timestamp') {
+    const leftDate = parseIncidentDate(leftText);
+    const rightDate = parseIncidentDate(rightText);
+    if (leftDate && rightDate) return leftDate.getTime() - rightDate.getTime();
+  }
+
+  const toTime = (value) => {
+    const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    if (match[4]?.toUpperCase() === 'PM' && hours < 12) hours += 12;
+    if (match[4]?.toUpperCase() === 'AM' && hours === 12) hours = 0;
+    return hours * 3600 + Number(match[2]) * 60 + Number(match[3] || 0);
+  };
+  const leftTime = toTime(leftText);
+  const rightTime = toTime(rightText);
+  if (leftTime !== null && rightTime !== null) return leftTime - rightTime;
+
+  const leftNumber = Number(leftText.replace(/,/g, ''));
+  const rightNumber = Number(rightText.replace(/,/g, ''));
+  if (
+    Number.isFinite(leftNumber) &&
+    Number.isFinite(rightNumber) &&
+    leftText !== '' &&
+    rightText !== ''
+  ) {
+    return leftNumber - rightNumber;
+  }
+  return leftText.localeCompare(rightText, undefined, { numeric: true, sensitivity: 'base' });
+}
 
 const PRINT_COLUMNS = [
-  'DATE', 'NOTIFICATON TIME', 'TYPE OF CALL', 'NATURE OF CALL',
-  'RESPONSE UNIT', 'LOCATION/DESTINATION', 'DISPATCH TIME',
-  'PROCEEDING TO AREA', 'ARRIVE AT SCENE/ DESTINATION',
-  'PROCEEDING TO HOS/RES.', 'ARRIVAL AT HOS/RES.',
+  'Date',
+  'Notification Time',
+  'Type of Incident',
+  'Nature of Call',
+  'Resource Unit',
+  'Location',
+  'Dispatch Time',
+  'Run Time',
+  'Scene Time',
+  'Enroute To Facility',
+  'Arrival to Facility',
 ];
 
-// E-Log records. Mirrors js/report.js: load CSV (skipping the
-// pre-header rows), pick a column order, filter, then optionally
-// print a batch logbook to a popup window.
+// Incident records can be searched, filtered, and batch printed.
 export default function Report({ onToggleSidebar }) {
   const [headers, setHeaders] = useState([]);
   const [allRows, setAllRows] = useState([]);
   const [dateVal, setDateVal] = useState('');
   const [timeInput, setTimeInput] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [sortBy, setSortBy] = useState('Timestamp');
+  const [sortDirection, setSortDirection] = useState('desc');
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const dateInputRef = useRef(null);
 
   // Personnel used by the print layout. The modal edits these right
@@ -83,56 +115,24 @@ export default function Report({ onToggleSidebar }) {
 
     async function load() {
       try {
-        const response = await fetch(ELOG_CSV_URL);
-        const rawText = await response.text();
-        const lines = rawText.split('\n');
-
-        let headerIndex = 0;
-        for (let i = 0; i < lines.length; i += 1) {
-          const l = lines[i].toLowerCase();
-          if (l.includes('date') || l.includes('time')) {
-            headerIndex = i;
-            break;
-          }
-        }
-
-        const cleanedText = lines.slice(headerIndex).join('\n');
-        const raw = window.d3.csvParse(cleanedText);
-
-        const rawHeaders = raw.columns.map((c) => c.trim()).filter((c) => c.length > 0);
-
-        const ordered = [];
-        ORDERED_HEADERS.forEach((wanted) => {
-          const m = rawHeaders.find((rh) => rh.toLowerCase() === wanted.toLowerCase());
-          if (m) ordered.push(m);
-        });
-        rawHeaders.forEach((rh) => {
-          if (!ordered.includes(rh)) ordered.push(rh);
-        });
-
-        const cleaned = raw
-          .map((row) => {
-            const out = {};
-            Object.keys(row).forEach((k) => {
-              if (k.trim()) out[k.trim()] = row[k];
-            });
-            return out;
-          })
+        const rows = await fetchIncidentRows();
+        const cleaned = rows
           .filter((row) => {
-            const hasContent = Object.values(row).some((v) => v && v.trim() !== '');
-            const idKey = Object.keys(row).find((k) => k.toLowerCase() === 'incident id');
-            const id = idKey && row[idKey] ? row[idKey].trim().toUpperCase() : '';
+            const hasContent = Object.values(row).some((value) => String(value).trim());
+            const id = String(row['Incident ID'] || '').trim().toUpperCase();
             return hasContent && id !== '' && id !== 'N/A';
           })
           .reverse();
 
         if (!cancelled) {
-          setHeaders(ordered);
+          setHeaders(INCIDENT_COLUMNS);
           setAllRows(cleaned);
         }
       } catch (err) {
         console.error('Error loading E-Log data:', err);
         if (!cancelled) setError(err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -153,34 +153,30 @@ export default function Report({ onToggleSidebar }) {
     const lowerSearch = searchInput.toLowerCase().trim();
     const isFiltered = dateVal !== '' || lowerTime !== '' || lowerSearch !== '';
 
-    let result = allRows.filter((row) => {
+    const result = allRows.filter((row) => {
       let matches = true;
 
       if (dateVal) {
-        const dateKey =
-          headers.find((h) => h.toLowerCase() === 'date') ||
-          headers.find((h) => h.toLowerCase().includes('date'));
-        const rowDateStr = dateKey && row[dateKey] ? row[dateKey].trim() : '';
-        const rowDate = new Date(rowDateStr);
+        const rowDate =
+          parseIncidentDate(row['Date']) || parseIncidentDate(row['Timestamp']);
 
-        if (!Number.isNaN(rowDate)) {
+        if (rowDate) {
+          const rowDay = new Date(
+            rowDate.getFullYear(),
+            rowDate.getMonth(),
+            rowDate.getDate()
+          ).getTime();
           if (dateVal.includes(' to ')) {
             const [startStr, endStr] = dateVal.split(' to ');
             const [sy, sm, sd] = startStr.split('-').map(Number);
             const start = new Date(sy, sm - 1, sd).getTime();
             const [ey, em, ed] = endStr.split('-').map(Number);
-            const end = new Date(ey, em - 1, ed, 23, 59, 59).getTime();
-            if (rowDate.getTime() < start || rowDate.getTime() > end) matches = false;
+            const end = new Date(ey, em - 1, ed).getTime();
+            if (rowDay < start || rowDay > end) matches = false;
           } else {
             const [sy, sm, sd] = dateVal.split('-').map(Number);
-            const single = new Date(sy, sm - 1, sd);
-            if (
-              rowDate.getFullYear() !== single.getFullYear() ||
-              rowDate.getMonth() !== single.getMonth() ||
-              rowDate.getDate() !== single.getDate()
-            ) {
-              matches = false;
-            }
+            const single = new Date(sy, sm - 1, sd).getTime();
+            if (rowDay !== single) matches = false;
           }
         } else {
           matches = false;
@@ -188,10 +184,7 @@ export default function Report({ onToggleSidebar }) {
       }
 
       if (matches && lowerTime) {
-        const timeKey = headers.find(
-          (h) => h.toLowerCase().includes('notificat') || h.toLowerCase().includes('time')
-        );
-        const rowTime = timeKey && row[timeKey] ? row[timeKey].toLowerCase() : '';
+        const rowTime = String(row['Notification Time'] || '').toLowerCase();
         if (!rowTime.includes(lowerTime)) matches = false;
       }
 
@@ -203,8 +196,18 @@ export default function Report({ onToggleSidebar }) {
       return matches;
     });
 
+    const direction = sortDirection === 'asc' ? 1 : -1;
+    result.sort((left, right) => {
+      const leftEmpty = !String(left[sortBy] ?? '').trim();
+      const rightEmpty = !String(right[sortBy] ?? '').trim();
+      if (leftEmpty || rightEmpty) {
+        return leftEmpty === rightEmpty ? 0 : leftEmpty ? 1 : -1;
+      }
+      return direction * compareIncidentValues(left[sortBy], right[sortBy], sortBy);
+    });
+
     return { rows: isFiltered ? result : result.slice(0, 10), isFiltered, total: result.length };
-  }, [allRows, dateVal, timeInput, searchInput, headers]);
+  }, [allRows, dateVal, timeInput, searchInput, sortBy, sortDirection]);
 
   const printEnabled = dateVal !== '' && filtered.rows.length > 0;
 
@@ -215,6 +218,15 @@ export default function Report({ onToggleSidebar }) {
     setDateVal('');
     setTimeInput('');
     setSearchInput('');
+  }
+
+  function changeSort(column) {
+    if (sortBy === column) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(column);
+      setSortDirection(column === 'Timestamp' ? 'desc' : 'asc');
+    }
   }
 
   function startPrint() {
@@ -230,11 +242,11 @@ export default function Report({ onToggleSidebar }) {
   }
 
   function buildPrintHtml() {
-    const getVal = (row, keyStr) => {
-      const key =
-        headers.find((h) => h.toLowerCase() === keyStr.toLowerCase()) ||
-        headers.find((h) => h.toLowerCase().includes(keyStr.toLowerCase()));
-      return key && row[key] && row[key].trim() !== '' ? row[key] : '';
+    const getVal = (row, key) => {
+      const value = row[key];
+      return value !== null && value !== undefined && String(value).trim()
+        ? escapeHtml(value)
+        : '';
     };
 
     const tableRowsHtml = filtered.rows
@@ -300,7 +312,7 @@ export default function Report({ onToggleSidebar }) {
 </div>
 <table class="data">
   <thead>
-    <tr>${PRINT_COLUMNS.map((c) => `<th>${escapeHtml(c.replace('NOTIFICATON', 'NOTIFICATION'))}</th>`).join('')}</tr>
+    <tr>${PRINT_COLUMNS.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr>
   </thead>
   <tbody>${tableRowsHtml}</tbody>
 </table>
@@ -539,7 +551,7 @@ export default function Report({ onToggleSidebar }) {
 
       {error && (
         <div className="panel" style={{ color: '#dc3545' }}>
-          Failed to load E-Log data.
+          Failed to load incident data: {error.message}
         </div>
       )}
 
@@ -619,14 +631,21 @@ export default function Report({ onToggleSidebar }) {
             id="record-count"
             style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 500 }}
           >
-            {allRows.length === 0
-              ? 'Loading...'
+            {loading
+              ? 'Loading incident records…'
+              : error
+                ? 'Incident records unavailable'
+                : allRows.length === 0
+                  ? 'No incident records'
               : filtered.isFiltered
                 ? `Showing ${filtered.rows.length} matching record(s)`
                 : `Showing 10 latest of ${allRows.length} total record(s)`}
           </div>
         </div>
 
+        {loading ? (
+          <SkeletonTable rows={8} columns={6} label="Loading incident records" />
+        ) : (
         <div style={{ overflowX: 'auto' }}>
           <table className="report-table">
             <thead>
@@ -634,6 +653,13 @@ export default function Report({ onToggleSidebar }) {
                 {headers.map((h) => (
                   <th
                     key={h}
+                    aria-sort={
+                      sortBy === h
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
                     style={{
                       whiteSpace: 'nowrap',
                       padding: '12px 15px',
@@ -643,7 +669,29 @@ export default function Report({ onToggleSidebar }) {
                       textAlign: 'left',
                     }}
                   >
-                    {h}
+                    <button
+                      type="button"
+                      onClick={() => changeSort(h)}
+                      style={{
+                        border: 0,
+                        padding: 0,
+                        background: 'transparent',
+                        color: 'inherit',
+                        font: 'inherit',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                      {sortBy === h && (
+                        <i
+                          className={`fa-solid fa-arrow-${sortDirection === 'asc' ? 'up' : 'down'}`}
+                          aria-hidden="true"
+                          style={{ marginLeft: 6 }}
+                        />
+                      )}
+                    </button>
                   </th>
                 ))}
               </tr>
@@ -680,6 +728,7 @@ export default function Report({ onToggleSidebar }) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       <PersonnelModal

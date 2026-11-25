@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
+import { SkeletonCard, SkeletonNotice } from '../components/Skeletons.jsx';
+import { fetchIncidentRows } from '../data/incidents.js';
 import {
   computeMetrics,
   renderMap,
@@ -8,18 +10,12 @@ import {
   renderTrendChart,
   renderTypeChart,
 } from '../utils/chart.js';
-import { getAverageTime } from '../utils/time.js';
+import { getAverageElapsedTime } from '../utils/time.js';
 
-// Same live endpoints used across Dashboard, Resource, Report, Weather, and News
-const DASH_SHEET_ID = '189IMJxmVEHD033kCJrprM_7CcdOg7QTTra8D9dy-Dv8';
-const DASH_GID = '1297922850';
-const DASH_CSV_URL = `https://docs.google.com/spreadsheets/d/${DASH_SHEET_ID}/export?format=csv&gid=${DASH_GID}`;
 const GEOJSON_URL = `${import.meta.env.BASE_URL}data/Boundary.json`;
-
 const RES_SHEET_ID = '1AtMv03PDmXNgj9IkQVXX8iZjjEMduzHKRk4fY_8DN1A';
 const RES_GID = '1800080155';
 const RES_CSV_URL = `https://docs.google.com/spreadsheets/d/${RES_SHEET_ID}/export?format=csv&gid=${RES_GID}`;
-const ELOG_CSV_URL = `https://docs.google.com/spreadsheets/d/${RES_SHEET_ID}/export?format=csv&gid=0`;
 
 const WEATHER_API_URL =
   'https://api.openweathermap.org/data/2.5/weather?lat=8.9515&lon=125.5277&appid=969ca531fbd4c3fb820d95765b142485&units=metric';
@@ -272,7 +268,12 @@ export default function CustomPage({ onToggleSidebar }) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed.widgets) && parsed.widgets.length > 0) {
-          return parsed.widgets;
+          return parsed.widgets.map((widget) =>
+            widget.type === 'resource-units' &&
+            widget.title === 'Incident Resource Assignments'
+              ? { ...widget, title: 'Active Fleet Units' }
+              : widget
+          );
         }
       }
     } catch (e) {
@@ -307,6 +308,14 @@ export default function CustomPage({ onToggleSidebar }) {
   const [elogRows, setElogRows] = useState([]);
   const [weather, setWeather] = useState(null);
   const [news, setNews] = useState([]);
+  const [incidentLoading, setIncidentLoading] = useState(true);
+  const [resourceLoading, setResourceLoading] = useState(true);
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
+  const [resourceError, setResourceError] = useState('');
+  const [weatherError, setWeatherError] = useState('');
+  const [newsError, setNewsError] = useState('');
 
   // Persist layout changes
   useEffect(() => {
@@ -324,22 +333,13 @@ export default function CustomPage({ onToggleSidebar }) {
   useEffect(() => {
     let cancelled = false;
 
-    // 1. Dashboard CSV + GeoJSON
+    // Load the primary incident feed once for all incident-based widgets.
     Promise.all([
-      window.d3 ? window.d3.csv(DASH_CSV_URL) : Promise.resolve([]),
+      fetchIncidentRows(),
       window.d3 ? window.d3.json(GEOJSON_URL).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([csvData, rawMap]) => {
+      .then(([rows, rawMap]) => {
         if (cancelled) return;
-        const cleaned = (csvData || []).map((row) => {
-          const out = {};
-          Object.keys(row).forEach((k) => {
-            const cleanKey = k.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-            out[cleanKey] = row[k];
-          });
-          return out;
-        });
-
         let geo = null;
         if (rawMap) {
           if (rawMap.type === 'Topology' && window.topojson) {
@@ -349,92 +349,117 @@ export default function CustomPage({ onToggleSidebar }) {
             geo = rawMap;
           }
         }
-        setDashData(cleaned);
-        setGeoJson(geo);
-      })
-      .catch((err) => console.error('CustomPage dashboard fetch error:', err));
+        const recentIncidents = rows
+          .filter((row) => {
+            const id = String(row['Incident ID'] || '').trim().toUpperCase();
+            return id !== '' && id !== 'N/A';
+          })
+          .slice()
+          .reverse()
+          .slice(0, 8);
 
-    // 2. Resource Tracker CSV
+        setDashData(rows);
+        setElogRows(recentIncidents);
+        setGeoJson(geo);
+        setIncidentLoading(false);
+      })
+      .catch((err) => {
+        console.error('CustomPage incident data error:', err);
+        if (!cancelled) {
+          setDataError(err.message || 'Unable to load incident data.');
+          setIncidentLoading(false);
+        }
+      });
+
+    // Resource Tracker remains on its original, separate spreadsheet.
     fetch(RES_CSV_URL)
-      .then((r) => r.text())
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Resource spreadsheet request failed (${response.status}).`);
+        }
+        return response.text();
+      })
       .then((rawText) => {
-        if (cancelled || !window.d3) return;
+        if (cancelled) return;
+        if (!window.d3?.csvParse) {
+          throw new Error('CSV parser is unavailable.');
+        }
         const csvLines = rawText.split('\n').slice(1);
         const headers = csvLines[0].split(',');
         let statusCount = 0;
-        headers.forEach((h, i) => {
-          if (h.trim() === 'STATUS') {
+        headers.forEach((header, index) => {
+          if (header.trim() === 'STATUS') {
             statusCount += 1;
-            headers[i] = statusCount === 1 ? 'UNIT STATUS' : 'MISSION STATUS';
+            headers[index] =
+              statusCount === 1 ? 'UNIT STATUS' : 'MISSION STATUS';
           }
         });
         csvLines[0] = headers.join(',');
+
         const parsed = window.d3.csvParse(csvLines.join('\n'));
         const cleaned = parsed
           .map((row) => {
-            const out = {};
-            Object.keys(row).forEach((k) => {
-              out[k.trim()] = row[k];
+            const resource = {};
+            Object.keys(row).forEach((header) => {
+              resource[header.trim()] = row[header];
             });
-            if (!out['UNIT STATUS']) out['UNIT STATUS'] = 'Unknown';
-            return out;
+            if (!resource['UNIT STATUS']) resource['UNIT STATUS'] = 'Unknown';
+            return resource;
           })
-          .filter((r) => r['RESOURCES'] && r['RESOURCES'].trim() !== '');
+          .filter(
+            (row) => row['RESOURCES'] && row['RESOURCES'].trim() !== ''
+          );
         setResources(cleaned);
+        setResourceLoading(false);
       })
-      .catch((err) => console.error('CustomPage resource fetch error:', err));
-
-    // 3. E-Log Report CSV
-    fetch(ELOG_CSV_URL)
-      .then((r) => r.text())
-      .then((rawText) => {
-        if (cancelled || !window.d3) return;
-        const lines = rawText.split('\n');
-        let headerIndex = 0;
-        for (let i = 0; i < lines.length; i += 1) {
-          const l = lines[i].toLowerCase();
-          if (l.includes('date') || l.includes('time')) {
-            headerIndex = i;
-            break;
-          }
+      .catch((err) => {
+        console.error('CustomPage resource fetch error:', err);
+        if (!cancelled) {
+          setResourceError(err.message || 'Unable to load resource data.');
+          setResourceLoading(false);
         }
-        const parsed = window.d3.csvParse(lines.slice(headerIndex).join('\n'));
-        const cleaned = parsed
-          .map((row) => {
-            const out = {};
-            Object.keys(row).forEach((k) => {
-              if (k.trim()) out[k.trim()] = row[k];
-            });
-            return out;
-          })
-          .filter((row) => {
-            const idKey = Object.keys(row).find(
-              (k) => k.toLowerCase() === 'incident id'
-            );
-            const id = idKey && row[idKey] ? row[idKey].trim().toUpperCase() : '';
-            return id !== '' && id !== 'N/A';
-          })
-          .reverse()
-          .slice(0, 8);
-        setElogRows(cleaned);
-      })
-      .catch((err) => console.error('CustomPage elog fetch error:', err));
+      });
 
     // 4. Weather API
     fetch(WEATHER_API_URL)
-      .then((r) => r.json())
-      .then((json) => {
-        if (!cancelled) setWeather(json);
+      .then((r) => {
+        if (!r.ok) throw new Error(`Weather request failed (${r.status}).`);
+        return r.json();
       })
-      .catch((err) => console.error('CustomPage weather error:', err));
+      .then((json) => {
+        if (!cancelled) {
+          setWeather(json);
+          setWeatherLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('CustomPage weather error:', err);
+        if (!cancelled) {
+          setWeatherError(err.message || 'Unable to load weather data.');
+          setWeatherLoading(false);
+        }
+      });
 
     // 5. Facebook News API
     fetch(NEWS_API_URL)
-      .then((r) => r.json())
-      .then((json) => {
-        if (!cancelled && json.data) setNews(json.data);
+      .then((r) => {
+        if (!r.ok) throw new Error(`News request failed (${r.status}).`);
+        return r.json();
       })
-      .catch((err) => console.error('CustomPage news error:', err));
+      .then((json) => {
+        if (json.error) throw new Error(json.error.message || 'Unable to load news.');
+        if (!cancelled) {
+          setNews(json.data || []);
+          setNewsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('CustomPage news error:', err);
+        if (!cancelled) {
+          setNewsError(err.message || 'Unable to load news.');
+          setNewsLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -463,15 +488,15 @@ export default function CustomPage({ onToggleSidebar }) {
 
   const metrics = useMemo(() => computeMetrics(dashData), [dashData]);
   const avgDispatch = useMemo(
-    () => getAverageTime(dashData, 'COMPUTED DISPATCH TIME (N-E)'),
+    () => getAverageElapsedTime(dashData, 'Notification Time', 'Dispatch Time'),
     [dashData]
   );
   const avgRun = useMemo(
-    () => getAverageTime(dashData, 'COMPUTED RUN TIME (O-N)'),
+    () => getAverageElapsedTime(dashData, 'Dispatch Time', 'Run Time'),
     [dashData]
   );
   const avgResponse = useMemo(
-    () => getAverageTime(dashData, 'COMPUTED RESPONSE TIME (P-E)'),
+    () => getAverageElapsedTime(dashData, 'Notification Time', 'Arrival to Facility'),
     [dashData]
   );
 
@@ -775,6 +800,12 @@ export default function CustomPage({ onToggleSidebar }) {
           </button>
         </div>
       </PageHeader>
+
+      {dataError && (
+        <div className="panel" style={{ color: '#dc3545' }}>
+          Failed to load incident data: {dataError}
+        </div>
+      )}
 
       {/* Top Customization Bar: Canvas Background Theme + Reset */}
       <div className="cw-toolbar">
@@ -1122,10 +1153,17 @@ export default function CustomPage({ onToggleSidebar }) {
                       avgDispatch={avgDispatch}
                       avgRun={avgRun}
                       avgResponse={avgResponse}
+                      incidentLoading={incidentLoading}
                       resources={resources}
+                      resourceError={resourceError}
+                      resourceLoading={resourceLoading}
                       elogRows={elogRows}
                       weather={weather}
+                      weatherError={weatherError}
+                      weatherLoading={weatherLoading}
                       news={news}
+                      newsError={newsError}
+                      newsLoading={newsLoading}
                     />
                   </div>
                 </div>
@@ -1231,10 +1269,17 @@ function WidgetContent({
   avgDispatch,
   avgRun,
   avgResponse,
+  incidentLoading,
   resources,
+  resourceError,
+  resourceLoading,
   elogRows,
   weather,
+  weatherError,
+  weatherLoading,
   news,
+  newsError,
+  newsLoading,
 }) {
   const isDarkOrGradient =
     widget.theme === 'dark' ||
@@ -1251,6 +1296,15 @@ function WidgetContent({
 
   switch (widget.type) {
     case 'kpi-metrics':
+      if (incidentLoading) {
+        return (
+          <div className="cw-skeleton-grid" role="status" aria-label="Loading incident metrics">
+            {Array.from({ length: 5 }, (_, index) => (
+              <SkeletonCard key={index} variant="metric" />
+            ))}
+          </div>
+        );
+      }
       return (
         <div
           style={{
@@ -1287,6 +1341,7 @@ function WidgetContent({
       );
 
     case 'heatmap':
+      if (incidentLoading) return <SkeletonCard variant="panel" />;
       return (
         <div
           id={`custom-map-${widget.id}`}
@@ -1295,6 +1350,7 @@ function WidgetContent({
       );
 
     case 'tat-trend':
+      if (incidentLoading) return <SkeletonCard variant="panel" />;
       return (
         <div
           id={`custom-trend-${widget.id}`}
@@ -1303,6 +1359,14 @@ function WidgetContent({
       );
 
     case 'donuts':
+      if (incidentLoading) {
+        return (
+          <div className="cw-skeleton-grid" role="status" aria-label="Loading incident charts">
+            <SkeletonCard variant="panel" />
+            <SkeletonCard variant="panel" />
+          </div>
+        );
+      }
       return (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1, minHeight: 260 }}>
           <div id={`custom-radius-${widget.id}`} style={{ width: '100%', height: 240 }} />
@@ -1311,12 +1375,21 @@ function WidgetContent({
       );
 
     case 'avg-times':
+      if (incidentLoading) {
+        return (
+          <div className="cw-skeleton-list" role="status" aria-label="Loading response times">
+            {Array.from({ length: 3 }, (_, index) => (
+              <SkeletonCard key={index} variant="metric" />
+            ))}
+          </div>
+        );
+      }
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center', flex: 1 }}>
           {[
-            { label: 'Avg Dispatch Time', val: avgDispatch },
-            { label: 'Avg Run Time', val: avgRun },
-            { label: 'Avg Response Time', val: avgResponse },
+            { label: 'Notification to Dispatch', val: avgDispatch },
+            { label: 'Dispatch to Run', val: avgRun },
+            { label: 'Notification to Facility', val: avgResponse },
           ].map((item) => (
             <div
               key={item.label}
@@ -1342,6 +1415,8 @@ function WidgetContent({
       );
 
     case 'weather-hero': {
+      if (weatherLoading) return <SkeletonCard variant="panel" />;
+      if (weatherError) return <div role="status">Weather data unavailable: {weatherError}</div>;
       const temp =
         weather && typeof weather.main?.temp === 'number'
           ? `${Math.round(weather.main.temp)}°C`
@@ -1395,6 +1470,16 @@ function WidgetContent({
     }
 
     case 'weather-atmo':
+      if (weatherLoading) {
+        return (
+          <div className="cw-skeleton-grid" role="status" aria-label="Loading weather metrics">
+            {Array.from({ length: 4 }, (_, index) => (
+              <SkeletonCard key={index} variant="metric" />
+            ))}
+          </div>
+        );
+      }
+      if (weatherError) return <div role="status">Weather data unavailable: {weatherError}</div>;
       return (
         <div
           style={{
@@ -1435,14 +1520,32 @@ function WidgetContent({
       );
 
     case 'resource-units': {
+      if (resourceLoading) {
+        return (
+          <div className="cw-skeleton-grid" role="status" aria-label="Loading resource units">
+            {Array.from({ length: 4 }, (_, index) => (
+              <SkeletonCard key={index} variant="resource" />
+            ))}
+          </div>
+        );
+      }
       const availableUnits = resources.filter(
-        (r) => r['UNIT STATUS'].trim().toLowerCase() === 'available'
+        (resource) =>
+          String(resource['UNIT STATUS'] || '')
+            .trim()
+            .toLowerCase() === 'available'
       );
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: '0.8rem', color: themeObj.muted, fontWeight: 600 }}>
-            {availableUnits.length} Available of {resources.length} Total Units
-          </div>
+          {resourceError ? (
+            <div style={{ color: '#dc3545', fontSize: '0.82rem' }}>
+              Unable to load resource data: {resourceError}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.8rem', color: themeObj.muted, fontWeight: 600 }}>
+              {availableUnits.length} Available of {resources.length} Total Units
+            </div>
+          )}
           <div
             style={{
               display: 'grid',
@@ -1474,6 +1577,15 @@ function WidgetContent({
     }
 
     case 'elog-recent':
+      if (incidentLoading) {
+        return (
+          <div className="cw-skeleton-list" role="status" aria-label="Loading recent incidents">
+            {Array.from({ length: 4 }, (_, index) => (
+              <SkeletonCard key={index} variant="metric" />
+            ))}
+          </div>
+        );
+      }
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {elogRows.slice(0, 5).map((row, idx) => (
@@ -1493,14 +1605,14 @@ function WidgetContent({
             >
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {row['NATURE OF CALL'] || row['TYPE OF CALL'] || 'Incident Call'}
+                  {row['Nature of Call'] || row['Type of Incident'] || 'Incident Call'}
                 </div>
                 <div style={{ fontSize: '0.73rem', color: themeObj.muted }}>
-                  {row['LOCATION/DESTINATION'] || 'Butuan City'}
+                  {row['Location'] || row['Barangay'] || 'Location not recorded'}
                 </div>
               </div>
               <span style={{ fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', color: themeObj.muted }}>
-                {row['DATE'] || ''}
+                {row['Date'] || ''}
               </span>
             </div>
           ))}
@@ -1508,6 +1620,17 @@ function WidgetContent({
       );
 
     case 'news-highlight':
+      if (newsLoading) {
+        return (
+          <div className="cw-skeleton-list" role="status" aria-label="Loading news posts">
+            {Array.from({ length: 3 }, (_, index) => (
+              <SkeletonCard key={index} variant="metric" />
+            ))}
+          </div>
+        );
+      }
+      if (newsError) return <div role="status">News feed unavailable: {newsError}</div>;
+      if (news.length === 0) return <div>No recent news posts available.</div>;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {news.slice(0, 3).map((post, idx) => (

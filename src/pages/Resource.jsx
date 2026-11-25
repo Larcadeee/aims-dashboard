@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import PageHeader from '../components/PageHeader.jsx';
+import { SkeletonCard } from '../components/Skeletons.jsx';
 
 const RES_SHEET_ID = '1AtMv03PDmXNgj9IkQVXX8iZjjEMduzHKRk4fY_8DN1A';
 const RES_GID = '1800080155';
@@ -395,19 +396,11 @@ export default function Resource({ onToggleSidebar }) {
 
           <div id="resList" className="resource-grid">
             {loading ? (
-              <div
-                style={{
-                  gridColumn: '1 / -1',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 10,
-                  color: '#64748b',
-                  padding: 30,
-                }}
-              >
-                <span className="spinner" /> Loading resources...
-              </div>
+              <>
+                {Array.from({ length: 4 }, (_, index) => (
+                  <SkeletonCard key={index} variant="resource" />
+                ))}
+              </>
             ) : visible.length === 0 ? (
               <p
                 style={{
@@ -458,7 +451,11 @@ export default function Resource({ onToggleSidebar }) {
             Distribution of assigned personnel across{' '}
             <b>{activeFilter === 'All' ? 'All Units' : activeFilter}</b> resources.
           </p>
-          <div id="resChartDiv" style={{ width: '100%', height: 420 }} />
+          {loading ? (
+            <SkeletonCard variant="panel" />
+          ) : (
+            <div id="resChartDiv" style={{ width: '100%', height: 420 }} />
+          )}
         </div>
       </div>
     </div>
